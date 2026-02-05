@@ -1,5 +1,7 @@
 """BigQuery service for reading and writing YouTube analytics data."""
 import logging
+import os
+import json
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
 from google.cloud import bigquery
@@ -29,14 +31,32 @@ class BigQueryService:
         """
         self.project_id = project_id
         self.local_db = local_db  # For storing/reading analysis results
-        # Include both BigQuery and Drive scopes to access Drive-backed external tables
-        credentials = service_account.Credentials.from_service_account_file(
-            credentials_path,
-            scopes=[
-                "https://www.googleapis.com/auth/bigquery",
-                "https://www.googleapis.com/auth/drive.readonly"
-            ],
-        )
+
+        # Try to load credentials from environment variable first (for cloud deployment)
+        credentials_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
+
+        if credentials_json:
+            # Load from environment variable (Render, Cloud Run, etc.)
+            logger.info("Loading credentials from GOOGLE_CREDENTIALS_JSON environment variable")
+            credentials_info = json.loads(credentials_json)
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=[
+                    "https://www.googleapis.com/auth/bigquery",
+                    "https://www.googleapis.com/auth/drive.readonly"
+                ],
+            )
+        else:
+            # Load from file (local development)
+            logger.info(f"Loading credentials from file: {credentials_path}")
+            credentials = service_account.Credentials.from_service_account_file(
+                credentials_path,
+                scopes=[
+                    "https://www.googleapis.com/auth/bigquery",
+                    "https://www.googleapis.com/auth/drive.readonly"
+                ],
+            )
+
         self.client = bigquery.Client(
             credentials=credentials,
             project=project_id

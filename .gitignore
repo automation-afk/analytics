@@ -42,6 +42,7 @@ credentials/
 *.json
 !render.yaml
 !cloudbuild.yaml
+flask_redirect_cred.json
 
 # Database
 *.db

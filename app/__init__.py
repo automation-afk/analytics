@@ -42,6 +42,10 @@ def create_app(config_name='development'):
         local_db=app.local_db  # Pass local_db for analysis results
     )
 
+    # Initialize OAuth
+    from app.blueprints.auth import init_oauth
+    init_oauth(app)
+
     # Register blueprints
     from app.blueprints import auth, dashboard, videos, analysis, api
     app.register_blueprint(auth.bp)

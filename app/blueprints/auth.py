@@ -1,11 +1,32 @@
-"""Authentication blueprint - email-based access control."""
-from flask import Blueprint, render_template, redirect, url_for, request, session, flash
+"""Authentication blueprint - Google OAuth-based access control."""
+import os
+from flask import Blueprint, render_template, redirect, url_for, request, session, flash, current_app
 from functools import wraps
+from authlib.integrations.flask_client import OAuth
 
 bp = Blueprint('auth', __name__)
 
+# Initialize OAuth
+oauth = OAuth()
+
 # Allowed email domains
 ALLOWED_DOMAINS = ['digidom.ventures', 'banyantreedigital.com']
+
+
+def init_oauth(app):
+    """Initialize OAuth with app configuration."""
+    oauth.init_app(app)
+
+    # Register Google OAuth provider
+    oauth.register(
+        name='google',
+        client_id=os.getenv('GOOGLE_OAUTH_CLIENT_ID'),
+        client_secret=os.getenv('GOOGLE_OAUTH_CLIENT_SECRET'),
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={
+            'scope': 'openid email profile'
+        }
+    )
 
 
 def login_required(f):
@@ -27,30 +48,67 @@ def is_email_allowed(email):
     return domain in ALLOWED_DOMAINS
 
 
-@bp.route('/login', methods=['GET', 'POST'])
+@bp.route('/login', methods=['GET'])
 def login():
-    """Login page with email verification."""
+    """Login page with Google OAuth."""
     # If already logged in, redirect to dashboard
     if 'user_email' in session:
         return redirect(url_for('dashboard.overview'))
 
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip().lower()
-
-        if is_email_allowed(email):
-            # Store email in session
-            session['user_email'] = email
-            session.permanent = True  # Keep session alive
-
-            # Redirect to next page or dashboard
-            next_page = request.args.get('next')
-            if next_page:
-                return redirect(next_page)
-            return redirect(url_for('dashboard.overview'))
-        else:
-            flash('Access denied. Only @digidom.ventures and @banyantreedigital.com emails are allowed.', 'error')
-
     return render_template('auth/login.html')
+
+
+@bp.route('/login/google')
+def login_google():
+    """Initiate Google OAuth flow."""
+    # Get the callback URL
+    redirect_uri = url_for('auth.authorize', _external=True)
+
+    # Redirect to Google for authentication
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@bp.route('/authorize')
+def authorize():
+    """Handle Google OAuth callback."""
+    try:
+        # Get the token from Google
+        token = oauth.google.authorize_access_token()
+
+        # Get user info from Google
+        user_info = oauth.google.parse_id_token(token)
+
+        # Extract email
+        email = user_info.get('email', '').lower()
+
+        # Check if email domain is allowed
+        if not is_email_allowed(email):
+            flash(f'Access denied. Only @digidom.ventures and @banyantreedigital.com emails are allowed.', 'error')
+            return redirect(url_for('auth.login'))
+
+        # Check if email is verified by Google
+        if not user_info.get('email_verified', False):
+            flash('Please verify your email with Google first.', 'error')
+            return redirect(url_for('auth.login'))
+
+        # Store user info in session
+        session['user_email'] = email
+        session['user_name'] = user_info.get('name', '')
+        session['user_picture'] = user_info.get('picture', '')
+        session.permanent = True
+
+        flash(f'Welcome, {user_info.get("name", "User")}!', 'success')
+
+        # Redirect to next page or dashboard
+        next_page = request.args.get('next')
+        if next_page:
+            return redirect(next_page)
+        return redirect(url_for('dashboard.overview'))
+
+    except Exception as e:
+        current_app.logger.error(f'OAuth error: {str(e)}')
+        flash('Authentication failed. Please try again.', 'error')
+        return redirect(url_for('auth.login'))
 
 
 @bp.route('/logout')

@@ -7,10 +7,15 @@ bp = Blueprint('dashboard', __name__)
 
 
 @bp.route('/')
-@login_required
 def index():
-    """Redirect to dashboard."""
-    return redirect(url_for('dashboard.overview'))
+    """Landing page - redirect to login or dashboard."""
+    from flask import session
+    if 'user_email' in session:
+        # User is authenticated, go to dashboard
+        return redirect(url_for('dashboard.overview'))
+    else:
+        # User not authenticated, go to login
+        return redirect(url_for('auth.login'))
 
 
 @bp.route('/dashboard')
