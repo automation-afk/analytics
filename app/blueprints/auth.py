@@ -75,8 +75,11 @@ def authorize():
         # Get the token from Google
         token = oauth.google.authorize_access_token()
 
-        # Get user info from Google
-        user_info = oauth.google.parse_id_token(token)
+        # Get user info from Google (userinfo is included in token with openid scope)
+        user_info = token.get('userinfo')
+        if not user_info:
+            # Fallback: fetch userinfo from Google's userinfo endpoint
+            user_info = oauth.google.userinfo()
 
         # Extract email
         email = user_info.get('email', '').lower()
