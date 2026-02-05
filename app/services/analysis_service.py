@@ -1,18 +1,13 @@
 """Analysis service for orchestrating AI analysis workflows."""
 import logging
-import sys
-import os
 from datetime import datetime
 from typing import List, Optional
 import time
 
-# Add parent directory to path to import existing analyzers
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
-
-from src.analyzers.content_analyzer import ContentAnalyzer
-from src.analyzers.description_analyzer import DescriptionAnalyzer
-from src.analyzers.affiliate_recommender import AffiliateRecommender
-
+# Import analyzers from local services
+from app.services.content_analyzer import ContentAnalyzer
+from app.services.description_analyzer import DescriptionAnalyzer
+from app.services.affiliate_recommender import AffiliateRecommender
 from app.services.conversion_analyzer import ConversionAnalyzer
 
 from app.models import (
