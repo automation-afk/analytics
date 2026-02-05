@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis Results - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1>
+                <i class="fas fa-tasks"></i> Analysis Job Results
+            </h1>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Job ID: {{ job.job_id }}</h5>
+                        <span class="badge bg-{% if job.status == 'completed' %}success{% elif job.status == 'running' %}primary{% elif job.status == 'failed' %}danger{% else %}secondary{% endif %}">
+                            {{ job.status|upper }}
+                        </span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Job Info -->
+                    <div class="mb-4">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Total Videos:</strong> {{ job.total_videos }}</p>
+                                <p><strong>Processed:</strong> {{ job.processed_videos }}/{{ job.total_videos }}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Started:</strong> {{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') if job.started_at else 'N/A' }}</p>
+                                {% if job.completed_at %}
+                                <p><strong>Completed:</strong> {{ job.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="mb-4">
+                        <h6>Progress</h6>
+                        <div class="progress" style="height: 30px;">
+                            <div class="progress-bar progress-bar-striped {% if job.status == 'running' %}progress-bar-animated{% endif %}"
+                                 role="progressbar"
+                                 style="width: {{ job.progress }}%">
+                                {{ job.progress }}%
+                            </div>
+                        </div>
+                        {% if job.current_video %}
+                        <small class="text-muted">Currently processing: {{ job.current_video }}</small>
+                        {% endif %}
+                    </div>
+
+                    <!-- Analysis Types -->
+                    <div class="mb-4">
+                        <h6>Analysis Types:</h6>
+                        <div>
+                            {% for type in job.analysis_types %}
+                            <span class="badge bg-info me-1">{{ type }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Error Message -->
+                    {% if job.error_message %}
+                    <div class="alert alert-danger">
+                        <h6><i class="fas fa-exclamation-triangle"></i> Error:</h6>
+                        <p class="mb-0">{{ job.error_message }}</p>
+                    </div>
+                    {% endif %}
+
+                    <!-- Success Message -->
+                    {% if job.status == 'completed' %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle"></i> Analysis completed successfully!
+                        Processed {{ job.total_videos }} video(s).
+                    </div>
+                    {% endif %}
+
+                    <!-- Video List -->
+                    {% if job.video_ids %}
+                    <div class="mb-4">
+                        <h6>Analyzed Videos:</h6>
+                        <div class="list-group">
+                            {% for video_id in job.video_ids[:10] %}
+                            <a href="{{ url_for('videos.detail', video_id=video_id) }}"
+                               class="list-group-item list-group-item-action">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>{{ video_id }}</span>
+                                    <i class="fas fa-arrow-right"></i>
+                                </div>
+                            </a>
+                            {% endfor %}
+                            {% if job.video_ids|length > 10 %}
+                            <div class="list-group-item text-center text-muted">
+                                ... and {{ job.video_ids|length - 10 }} more videos
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Actions -->
+                    <div class="d-grid gap-2">
+                        {% if job.status == 'running' %}
+                        <button class="btn btn-primary" onclick="location.reload()">
+                            <i class="fas fa-sync"></i> Refresh Status
+                        </button>
+                        {% endif %}
+                        <a href="{{ url_for('dashboard.overview') }}" class="btn btn-secondary">
+                            <i class="fas fa-home"></i> Back to Dashboard
+                        </a>
+                        <a href="{{ url_for('analysis.trigger_form') }}" class="btn btn-outline-primary">
+                            <i class="fas fa-plus"></i> Run Another Analysis
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if job.status == 'running' %}
+{% block extra_js %}
+<script>
+    // Auto-refresh every 5 seconds while job is running
+    setTimeout(function() {
+        location.reload();
+    }, 5000);
+</script>
+{% endblock %}
+{% endif %}
+{% endblock %}

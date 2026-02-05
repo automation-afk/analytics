@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: yt-analytics-dashboard
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -b :$PORT --timeout 120 "app:create_app('production')"
+    healthCheckPath: /health
+    envVars:
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: BIGQUERY_PROJECT_ID
+        value: company-wide-370010
+      - key: CACHE_TYPE
+        value: simple
+      - key: LOG_LEVEL
+        value: INFO
+      - key: FLASK_ENV
+        value: production
+    # Note: You'll need to add ANTHROPIC_API_KEY manually in Render dashboard
+    # Also need to handle Google credentials (see RENDER_DEPLOY.md)

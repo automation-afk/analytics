@@ -1,0 +1,33 @@
+# Flask Web Framework
+flask>=3.0.0
+flask-caching>=2.1.0
+
+# Google Cloud BigQuery
+google-cloud-bigquery>=3.13.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+
+# AI APIs for Analysis
+anthropic>=0.40.0  # Claude API
+openai>=1.12.0     # ChatGPT API
+groq>=0.4.0        # Groq API (fast Whisper transcription)
+
+# YouTube/Media
+yt-dlp>=2024.1.0   # YouTube downloader
+opencv-python>=4.8.0  # Frame extraction
+
+# Background Job Scheduling
+apscheduler>=3.10.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Data Processing
+pandas>=2.1.0
+
+# Production WSGI Server
+gunicorn>=21.2.0
+
+# Utilities
+requests>=2.31.0
+python-dateutil>=2.8.2

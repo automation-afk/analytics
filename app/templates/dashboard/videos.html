@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}All Videos - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1>
+                <i class="fas fa-video"></i> All Videos
+            </h1>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <form method="get" action="{{ url_for('dashboard.videos_list') }}" class="row g-3">
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label for="channel" class="form-label">Channel</label>
+                            <select class="form-select" id="channel" name="channel">
+                                <option value="">All Channels</option>
+                                {% for ch in all_channels %}
+                                <option value="{{ ch }}" {% if channel_code == ch %}selected{% endif %}>{{ ch }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label for="video_id" class="form-label">Video ID</label>
+                            <input type="text" class="form-control" id="video_id" name="video_id"
+                                   value="{{ video_id_filter or '' }}" placeholder="Search video ID...">
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label for="has_analysis" class="form-label">Analysis Status</label>
+                            <select class="form-select" id="has_analysis" name="has_analysis">
+                                <option value="">All Videos</option>
+                                <option value="true" {% if has_analysis_filter == True %}selected{% endif %}>Analyzed Only</option>
+                                <option value="false" {% if has_analysis_filter == False %}selected{% endif %}>Not Analyzed</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3 d-flex align-items-end gap-2">
+                            <button type="submit" class="btn btn-primary flex-grow-1">
+                                <i class="fas fa-filter"></i> <span class="d-none d-sm-inline">Apply Filters</span>
+                            </button>
+                            <a href="{{ url_for('dashboard.videos_list') }}" class="btn btn-secondary flex-grow-1">
+                                <i class="fas fa-times"></i> <span class="d-none d-sm-inline">Clear</span>
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Videos Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Video List</h5>
+                </div>
+                <div class="card-body">
+                    {% if videos %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40%;">Title</th>
+                                        <th>Channel</th>
+                                        <th>Published</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for video in videos %}
+                                    <tr>
+                                        <td>
+                                            <a href="{{ url_for('videos.detail', video_id=video.video_id) }}"
+                                               class="text-decoration-none fw-bold">
+                                                {{ video.title }}
+                                            </a>
+                                            <br>
+                                            <small class="text-muted">ID: {{ video.video_id }}</small>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-secondary">{{ video.channel_code }}</span>
+                                        </td>
+                                        <td>{{ video.published_date.strftime('%Y-%m-%d') if video.published_date else 'N/A' }}</td>
+                                        <td>
+                                            {% if analyzing_videos.get(video.video_id) %}
+                                                <span class="badge bg-info">
+                                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                    Analyzing...
+                                                </span>
+                                                <br>
+                                                <small class="text-muted">In progress (2-3 min)</small>
+                                            {% elif video.has_analysis %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check-circle"></i> Analyzed
+                                                </span>
+                                                <br>
+                                                <small class="text-muted">
+                                                    {{ video.latest_analysis_date.strftime('%Y-%m-%d %H:%M') if video.latest_analysis_date }}
+                                                </small>
+                                            {% else %}
+                                                <span class="badge bg-warning">
+                                                    <i class="fas fa-clock"></i> Not Analyzed
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <a href="{{ url_for('videos.detail', video_id=video.video_id) }}"
+                                                   class="btn btn-outline-primary">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                <a href="{{ video.video_url }}" target="_blank"
+                                                   class="btn btn-outline-secondary">
+                                                    <i class="fab fa-youtube"></i>
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <nav aria-label="Video pagination">
+                            <ul class="pagination justify-content-center mb-0">
+                                {% if page > 1 %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('dashboard.videos_list', page=page-1, channel=channel_code, video_id=video_id_filter, has_analysis=has_analysis_filter) }}">
+                                        Previous
+                                    </a>
+                                </li>
+                                {% endif %}
+
+                                <li class="page-item active">
+                                    <span class="page-link">Page {{ page }}</span>
+                                </li>
+
+                                {% if has_more %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('dashboard.videos_list', page=page+1, channel=channel_code, video_id=video_id_filter, has_analysis=has_analysis_filter) }}">
+                                        Next
+                                    </a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    {% else %}
+                        <div class="alert alert-info text-center">
+                            <i class="fas fa-info-circle"></i> No videos found matching your criteria.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if analyzing_videos and analyzing_videos.values()|select|list %}
+<script>
+    // Auto-refresh page every 10 seconds when any video is being analyzed
+    setTimeout(function() {
+        location.reload();
+    }, 10000);
+</script>
+{% endif %}
+
+<script>
+    // Live filtering as user types
+    let searchTimeout = null;
+    const videoIdInput = document.getElementById('video_id');
+    const filterForm = videoIdInput.closest('form');
+
+    // Add loading indicator
+    function showLoadingIndicator() {
+        const indicator = document.createElement('div');
+        indicator.id = 'filterLoadingIndicator';
+        indicator.className = 'position-fixed top-50 start-50 translate-middle';
+        indicator.style.zIndex = '9999';
+        indicator.innerHTML = `
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        `;
+        document.body.appendChild(indicator);
+    }
+
+    videoIdInput.addEventListener('input', function() {
+        // Clear previous timeout
+        if (searchTimeout) {
+            clearTimeout(searchTimeout);
+        }
+
+        // Wait 500ms after user stops typing before filtering
+        searchTimeout = setTimeout(function() {
+            showLoadingIndicator();
+            filterForm.submit();
+        }, 500);
+    });
+
+    // Also enable live filtering for channel dropdown
+    const channelSelect = document.getElementById('channel');
+    channelSelect.addEventListener('change', function() {
+        showLoadingIndicator();
+        filterForm.submit();
+    });
+
+    // Also enable live filtering for analysis status
+    const analysisSelect = document.getElementById('has_analysis');
+    analysisSelect.addEventListener('change', function() {
+        showLoadingIndicator();
+        filterForm.submit();
+    });
+</script>
+{% endblock %}

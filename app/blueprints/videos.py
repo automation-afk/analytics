@@ -1,0 +1,101 @@
+"""Videos blueprint - individual video detail pages."""
+from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request
+from app.extensions import cache
+from app.blueprints.auth import login_required
+
+bp = Blueprint('videos', __name__, url_prefix='/videos')
+
+
+@bp.route('/<video_id>')
+@login_required
+def detail(video_id):
+    """
+    Video detail page showing all analysis results.
+
+    Args:
+        video_id: YouTube video ID
+    """
+    # Check if analysis is in progress
+    is_analyzing = cache.get(f'analyzing_{video_id}') or False
+
+    # Get complete analysis results (don't cache if analyzing)
+    analysis = current_app.bigquery.get_latest_analysis(video_id)
+
+    if not analysis or not analysis.video:
+        flash(f'Video not found: {video_id}', 'error')
+        return redirect(url_for('dashboard.videos_list'))
+
+    return render_template(
+        'videos/detail.html',
+        analysis=analysis,
+        video=analysis.video,
+        revenue_metrics=analysis.revenue_metrics,
+        script_analysis=analysis.script_analysis,
+        affiliate_recs=analysis.affiliate_recommendations,
+        description_analysis=analysis.description_analysis,
+        conversion_analysis=analysis.conversion_analysis,
+        is_analyzing=is_analyzing
+    )
+
+
+@bp.route('/<video_id>/analyze', methods=['POST'])
+@login_required
+def analyze_single(video_id):
+    """
+    Trigger analysis for a single video (runs in background).
+
+    Args:
+        video_id: YouTube video ID
+    """
+    # Import here to avoid circular dependency
+    from app.services.analysis_service import AnalysisService
+    import threading
+
+    # CRITICAL: Get app reference BEFORE defining thread function
+    # Must be done while still in request context
+    app = current_app._get_current_object()
+
+    def run_analysis():
+        """Run analysis in background thread."""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            with app.app_context():
+                # Create analysis service INSIDE the app context
+                analysis_service = AnalysisService(
+                    bigquery_service=app.bigquery,
+                    anthropic_api_key=app.config['ANTHROPIC_API_KEY']
+                )
+
+                # Run analysis
+                result = analysis_service.analyze_video(
+                    video_id=video_id,
+                    analysis_types=['script', 'description', 'affiliate', 'conversion']
+                )
+                # Invalidate cache for this video
+                cache.delete(f'video_{video_id}')
+                # Clear analyzing flag
+                cache.delete(f'analyzing_{video_id}')
+                logger.info(f'Background analysis completed for {video_id}')
+        except Exception as e:
+            logger.error(f'Background analysis failed for {video_id}: {str(e)}')
+            # Clear analyzing flag even on error
+            try:
+                with app.app_context():
+                    cache.delete(f'analyzing_{video_id}')
+            except:
+                # If clearing flag fails, it will expire after 10 minutes anyway
+                pass
+
+    # Set analyzing flag in cache (expires in 10 minutes)
+    cache.set(f'analyzing_{video_id}', True, timeout=600)
+
+    # Start analysis in background thread
+    thread = threading.Thread(target=run_analysis)
+    thread.daemon = True
+    thread.start()
+
+    # Redirect immediately with message
+    flash(f'Analysis started! This takes 2-3 minutes. Refresh this page to see results.', 'info')
+    return redirect(url_for('videos.detail', video_id=video_id))

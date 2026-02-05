@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+
+{% block title %}{{ video.title }} - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Video Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="mb-2">{{ video.title }}</h1>
+                    <p class="text-muted mb-0">
+                        <span class="badge bg-secondary">{{ video.channel_code }}</span>
+                        <span class="ms-2">Published: {{ video.published_date.strftime('%Y-%m-%d') if video.published_date else 'N/A' }}</span>
+                        <span class="ms-2">ID: {{ video.video_id }}</span>
+                    </p>
+                </div>
+                <div>
+                    <a href="{{ video.video_url }}" target="_blank" class="btn btn-danger">
+                        <i class="fab fa-youtube"></i> Watch on YouTube
+                    </a>
+                    <form method="post" action="{{ url_for('videos.analyze_single', video_id=video.video_id) }}" class="d-inline">
+                        <button type="submit" class="btn btn-primary" {% if is_analyzing %}disabled{% endif %}>
+                            <i class="fas fa-brain"></i> Re-analyze
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis In Progress Banner -->
+    {% if is_analyzing %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info d-flex align-items-center" role="alert">
+                <div class="spinner-border spinner-border-sm me-3" role="status">
+                    <span class="visually-hidden">Analyzing...</span>
+                </div>
+                <div class="flex-grow-1">
+                    <strong><i class="fas fa-cog fa-spin"></i> Analysis in Progress</strong>
+                    <p class="mb-0">AI analysis is currently running for this video. This takes approximately 2-3 minutes. This page will auto-refresh when complete.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Performance Metrics -->
+    {% if revenue_metrics %}
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="text-muted">Revenue</h6>
+                    <h3 class="text-success">{{ revenue_metrics.revenue | format_currency }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="text-muted">Clicks</h6>
+                    <h3 class="text-primary">{{ revenue_metrics.clicks | format_number }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="text-muted">Sales</h6>
+                    <h3 class="text-info">{{ revenue_metrics.sales | format_number }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h6 class="text-muted">Views</h6>
+                    <h3 class="text-warning">{{ revenue_metrics.organic_views | format_number }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Script Analysis -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> Script Quality Analysis</h5>
+                </div>
+                <div class="card-body">
+                    {% if script_analysis %}
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col-6">
+                                    <h6>Overall Quality</h6>
+                                    <div class="progress" style="height: 25px;">
+                                        <div class="progress-bar bg-success" role="progressbar"
+                                             style="width: {{ (script_analysis.script_quality_score / 10 * 100)|int }}%">
+                                            {{ "%.1f" | format(script_analysis.script_quality_score) }}/10
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <h6>Hook Effectiveness</h6>
+                                    <div class="progress" style="height: 25px;">
+                                        <div class="progress-bar bg-info" role="progressbar"
+                                             style="width: {{ (script_analysis.hook_effectiveness_score / 10 * 100)|int }}%">
+                                            {{ "%.1f" | format(script_analysis.hook_effectiveness_score) }}/10
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col-6">
+                                    <h6>Call to Action</h6>
+                                    <div class="progress" style="height: 25px;">
+                                        <div class="progress-bar bg-warning" role="progressbar"
+                                             style="width: {{ (script_analysis.call_to_action_score / 10 * 100)|int }}%">
+                                            {{ "%.1f" | format(script_analysis.call_to_action_score) }}/10
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <h6>Persuasion</h6>
+                                    <div class="progress" style="height: 25px;">
+                                        <div class="progress-bar bg-danger" role="progressbar"
+                                             style="width: {{ (script_analysis.persuasion_effectiveness_score / 10 * 100)|int }}%">
+                                            {{ "%.1f" | format(script_analysis.persuasion_effectiveness_score) }}/10
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if script_analysis.key_strengths %}
+                        <div class="mb-3">
+                            <h6><i class="fas fa-check-circle text-success"></i> Key Strengths:</h6>
+                            <ul class="list-unstyled">
+                                {% for strength in script_analysis.key_strengths %}
+                                <li><i class="fas fa-arrow-right text-success me-2"></i>{{ strength }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        {% if script_analysis.improvement_areas %}
+                        <div class="mb-3">
+                            <h6><i class="fas fa-exclamation-triangle text-warning"></i> Improvement Areas:</h6>
+                            <ul class="list-unstyled">
+                                {% for area in script_analysis.improvement_areas %}
+                                <li><i class="fas fa-arrow-right text-warning me-2"></i>{{ area }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        {% if script_analysis.persuasion_techniques %}
+                        <div>
+                            <h6>Persuasion Techniques Used:</h6>
+                            <div>
+                                {% for technique in script_analysis.persuasion_techniques %}
+                                <span class="badge bg-secondary me-1 mb-1">{{ technique }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No script analysis available. Click "Re-analyze" to generate.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Affiliate Recommendations -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="fas fa-shopping-cart"></i> Affiliate Product Recommendations</h5>
+                </div>
+                <div class="card-body">
+                    {% if affiliate_recs %}
+                        <div class="list-group list-group-flush">
+                            {% for rec in affiliate_recs[:5] %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ rec.product_rank }}. {{ rec.product_name }}</h6>
+                                        <p class="mb-1 small">{{ rec.recommendation_reasoning }}</p>
+                                        <small class="text-muted">Category: {{ rec.product_category }}</small>
+                                    </div>
+                                    <div class="text-end ms-3">
+                                        <span class="badge bg-success">
+                                            {{ "%.0f" | format(rec.relevance_score * 100) }}% relevance
+                                        </span>
+                                        <br>
+                                        <small class="text-muted">
+                                            {{ "%.0f" | format(rec.conversion_probability * 100) }}% conversion
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No affiliate recommendations available.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Description Analysis -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-align-left"></i> Description CTR Analysis</h5>
+                </div>
+                <div class="card-body">
+                    {% if description_analysis %}
+                        <div class="row mb-3">
+                            <div class="col-4 text-center">
+                                <h6>Quality Score</h6>
+                                <h3 class="text-primary">{{ "%.1f" | format(description_analysis.description_quality_score) }}/10</h3>
+                            </div>
+                            <div class="col-4 text-center">
+                                <h6>CTA Score</h6>
+                                <h3 class="text-success">{{ "%.1f" | format(description_analysis.cta_effectiveness_score) }}/10</h3>
+                            </div>
+                            <div class="col-4 text-center">
+                                <h6>SEO Score</h6>
+                                <h3 class="text-info">{{ "%.1f" | format(description_analysis.seo_score) }}/10</h3>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <p><strong>Total Links:</strong> {{ description_analysis.total_links }}</p>
+                            <p><strong>Affiliate Links:</strong> {{ description_analysis.affiliate_links }}</p>
+                        </div>
+
+                        {% if description_analysis.optimization_suggestions %}
+                        <div>
+                            <h6><i class="fas fa-lightbulb text-warning"></i> Optimization Suggestions:</h6>
+                            <ul>
+                                {% for suggestion in description_analysis.optimization_suggestions %}
+                                <li>{{ suggestion }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No description analysis available.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Conversion Analysis -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Conversion Analysis</h5>
+                </div>
+                <div class="card-body">
+                    {% if conversion_analysis %}
+                        <div class="row mb-3">
+                            <div class="col-6 text-center">
+                                <h6>Conversion Rate</h6>
+                                <h3 class="text-success">{{ conversion_analysis.conversion_rate | format_percent }}</h3>
+                            </div>
+                            <div class="col-6 text-center">
+                                <h6>Revenue/Click</h6>
+                                <h3 class="text-primary">{{ conversion_analysis.revenue_per_click | format_currency }}</h3>
+                            </div>
+                        </div>
+
+                        {% if conversion_analysis.conversion_drivers %}
+                        <div class="mb-3">
+                            <h6><i class="fas fa-rocket text-success"></i> Conversion Drivers:</h6>
+                            <ul>
+                                {% for driver in conversion_analysis.conversion_drivers %}
+                                <li>{{ driver }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        {% if conversion_analysis.recommendations %}
+                        <div>
+                            <h6><i class="fas fa-star text-warning"></i> Recommendations:</h6>
+                            <ul>
+                                {% for rec in conversion_analysis.recommendations %}
+                                <li>{{ rec }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No conversion analysis available.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Description -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Video Description</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0" style="white-space: pre-wrap;">{{ video.description }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Back Button -->
+    <div class="row">
+        <div class="col-12">
+            <a href="{{ url_for('dashboard.videos_list') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Videos
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if is_analyzing %}
+<script>
+    // Auto-refresh page every 10 seconds when analysis is in progress
+    setTimeout(function() {
+        location.reload();
+    }, 10000);
+</script>
+{% endif %}
+{% endblock %}

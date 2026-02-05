@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="fas fa-chart-line"></i> Dashboard Overview
+            </h1>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-white-50">Total Videos</h6>
+                            <h2 class="mb-0">{{ stats.total_videos | format_number }}</h2>
+                        </div>
+                        <div>
+                            <i class="fas fa-video fa-3x opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-white-50">Analyzed Videos</h6>
+                            <h2 class="mb-0">{{ stats.analyzed_videos | format_number }}</h2>
+                        </div>
+                        <div>
+                            <i class="fas fa-check-circle fa-3x opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-white-50">Avg Script Quality</h6>
+                            <h2 class="mb-0">{{ "%.1f" | format(stats.avg_script_quality) }}/10</h2>
+                        </div>
+                        <div>
+                            <i class="fas fa-star fa-3x opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title">Total Revenue</h6>
+                            <h2 class="mb-0">{{ stats.total_revenue | format_currency }}</h2>
+                        </div>
+                        <div>
+                            <i class="fas fa-dollar-sign fa-3x opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Secondary Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Avg Hook Score</h6>
+                    <h3 class="text-primary">{{ "%.1f" | format(stats.avg_hook_score) }}/10</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Avg CTA Score</h6>
+                    <h3 class="text-success">{{ "%.1f" | format(stats.avg_cta_score) }}/10</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title text-muted">Avg Conversion Rate</h6>
+                    <h3 class="text-info">{{ stats.avg_conversion_rate | format_percent }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Analyzed Videos -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-clock"></i> Recently Analyzed Videos
+                    </h5>
+                    <a href="{{ url_for('dashboard.videos_list') }}" class="btn btn-sm btn-primary">
+                        View All Videos <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if recent_videos %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Video</th>
+                                        <th>Channel</th>
+                                        <th>Published</th>
+                                        <th>Last Analysis</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for video in recent_videos %}
+                                    <tr>
+                                        <td>
+                                            <a href="{{ url_for('videos.detail', video_id=video.video_id) }}" class="text-decoration-none">
+                                                {{ video.title[:60] }}{% if video.title|length > 60 %}...{% endif %}
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-secondary">{{ video.channel_code }}</span>
+                                        </td>
+                                        <td>{{ video.published_date.strftime('%Y-%m-%d') if video.published_date else 'N/A' }}</td>
+                                        <td>
+                                            {% if video.latest_analysis_date %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check"></i> {{ video.latest_analysis_date.strftime('%Y-%m-%d') }}
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-warning">
+                                                    <i class="fas fa-clock"></i> Not analyzed
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('videos.detail', video_id=video.video_id) }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i> View
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted text-center">No analyzed videos found. <a href="{{ url_for('analysis.trigger_form') }}">Run an analysis</a> to get started.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h5>Quick Actions</h5>
+                    <div class="btn-group mt-3" role="group">
+                        <a href="{{ url_for('analysis.trigger_form') }}" class="btn btn-primary">
+                            <i class="fas fa-brain"></i> Run New Analysis
+                        </a>
+                        <a href="{{ url_for('dashboard.videos_list') }}" class="btn btn-secondary">
+                            <i class="fas fa-list"></i> Browse All Videos
+                        </a>
+                        <a href="{{ url_for('analysis.history') }}" class="btn btn-info">
+                            <i class="fas fa-history"></i> View History
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

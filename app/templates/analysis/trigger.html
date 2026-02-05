@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Trigger Analysis - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1>
+                <i class="fas fa-brain"></i> Trigger AI Analysis
+            </h1>
+            <p class="text-muted">Run AI analysis on YouTube videos to get insights on script quality, conversions, and recommendations.</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('analysis.trigger_analysis') }}">
+                        <!-- Analysis Mode -->
+                        <div class="mb-4">
+                            <h5>Analysis Mode</h5>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="mode" id="mode_single" value="single" checked autocomplete="off">
+                                <label class="btn btn-outline-primary" for="mode_single">
+                                    <i class="fas fa-video"></i> Single Video
+                                </label>
+
+                                <input type="radio" class="btn-check" name="mode" id="mode_batch" value="batch" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="mode_batch">
+                                    <i class="fas fa-list"></i> Batch (Multiple Videos)
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Single Video Input -->
+                        <div id="single_input" class="mb-4">
+                            <label for="video_id" class="form-label">Video ID</label>
+                            <input type="text" class="form-control" id="video_id" name="video_id"
+                                   placeholder="Enter YouTube video ID (e.g., dQw4w9WgXcQ)">
+                            <small class="form-text text-muted">
+                                Enter the video ID from the YouTube URL
+                            </small>
+                        </div>
+
+                        <!-- Batch Filters -->
+                        <div id="batch_input" class="mb-4" style="display: none;">
+                            <div class="mb-3">
+                                <label for="channel_code" class="form-label">Channel Code</label>
+                                <input type="text" class="form-control" id="channel_code" name="channel_code"
+                                       placeholder="Enter channel code (optional)">
+                            </div>
+
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="unanalyzed_only" name="unanalyzed_only">
+                                <label class="form-check-label" for="unanalyzed_only">
+                                    Only unanalyzed videos
+                                </label>
+                            </div>
+
+                            <small class="form-text text-muted">
+                                Batch analysis will process up to 100 videos matching your criteria
+                            </small>
+                        </div>
+
+                        <!-- Analysis Types -->
+                        <div class="mb-4">
+                            <h5>Analysis Types</h5>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="script" name="analysis_types" value="script" checked>
+                                <label class="form-check-label" for="script">
+                                    <strong>Script Quality Analysis</strong>
+                                    <p class="text-muted small mb-0">Analyze transcript for quality, hooks, CTAs, and persuasion techniques</p>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="description" name="analysis_types" value="description" checked>
+                                <label class="form-check-label" for="description">
+                                    <strong>Description CTR Analysis</strong>
+                                    <p class="text-muted small mb-0">Evaluate video description for click-through optimization</p>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="affiliate" name="analysis_types" value="affiliate" checked>
+                                <label class="form-check-label" for="affiliate">
+                                    <strong>Affiliate Product Recommendations</strong>
+                                    <p class="text-muted small mb-0">AI-powered suggestions for best affiliate products to promote</p>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="conversion" name="analysis_types" value="conversion" checked>
+                                <label class="form-check-label" for="conversion">
+                                    <strong>Conversion Rate Analysis</strong>
+                                    <p class="text-muted small mb-0">Identify what drives conversions and revenue</p>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-play"></i> Start Analysis
+                            </button>
+                            <a href="{{ url_for('dashboard.overview') }}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Info Card -->
+            <div class="card mt-4 bg-light">
+                <div class="card-body">
+                    <h6><i class="fas fa-info-circle"></i> How it works:</h6>
+                    <ol class="mb-0">
+                        <li>Select single video or batch mode</li>
+                        <li>Choose which analysis types to run</li>
+                        <li>Click "Start Analysis" and wait for processing</li>
+                        <li>View results in the video detail page</li>
+                    </ol>
+                    <hr>
+                    <p class="mb-0 small text-muted">
+                        <strong>Note:</strong> Analysis uses Claude AI API and may take a few minutes per video.
+                        Rate limiting is applied to respect API quotas.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Toggle between single and batch mode
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.value === 'single') {
+                document.getElementById('single_input').style.display = 'block';
+                document.getElementById('batch_input').style.display = 'none';
+                document.getElementById('video_id').required = true;
+            } else {
+                document.getElementById('single_input').style.display = 'none';
+                document.getElementById('batch_input').style.display = 'block';
+                document.getElementById('video_id').required = false;
+            }
+        });
+    });
+</script>
+{% endblock %}

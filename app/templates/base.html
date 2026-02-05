@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}YouTube Analytics Dashboard{% endblock %}</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('dashboard.overview') }}">
+                <i class="fas fa-chart-line"></i> YT Analytics
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('dashboard.overview') }}">
+                            <i class="fas fa-home"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('dashboard.videos_list') }}">
+                            <i class="fas fa-video"></i> Videos
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('analysis.trigger_form') }}">
+                            <i class="fas fa-brain"></i> Run Analysis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('analysis.history') }}">
+                            <i class="fas fa-history"></i> History
+                        </a>
+                    </li>
+                </ul>
+                <div class="d-flex gap-2">
+                    <button id="darkModeToggle" class="btn btn-outline-light btn-sm" title="Toggle Dark Mode">
+                        <i id="darkModeIcon" class="fas fa-moon"></i>
+                    </button>
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm" title="Logout">
+                        <i class="fas fa-sign-out-alt me-1"></i>Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="container mt-3">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Main Content -->
+    <main class="container-fluid mt-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">YouTube Analytics Dashboard &copy; 2026</span>
+        </div>
+    </footer>
+
+    <!-- Analysis Progress Modal -->
+    <div class="modal fade" id="analysisProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="fas fa-cog fa-spin me-2"></i>
+                        <span id="modalTitle">Analysis in Progress</span>
+                    </h5>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Analyzing...</span>
+                    </div>
+                    <p class="mb-2"><strong id="modalVideoTitle">Analyzing video...</strong></p>
+                    <p class="text-muted mb-0">This takes approximately 2-3 minutes</p>
+                    <p class="text-muted small">You can navigate to other pages while this runs</p>
+                </div>
+                <div class="modal-footer">
+                    <small class="text-muted w-100 text-center">
+                        The page will update automatically when complete
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    <!-- Analysis Progress Checker -->
+    <script>
+        // Check for running analyses every 5 seconds
+        let analysisModal = null;
+        let analysisCheckInterval = null;
+        let modalEl = null;
+
+        function checkAnalysisStatus() {
+            fetch('/api/v1/analysis/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.is_analyzing && data.videos_analyzing.length > 0) {
+                        // Analysis is running
+                        const video = data.videos_analyzing[0];
+
+                        // Initialize modal if needed
+                        if (!modalEl) {
+                            modalEl = document.getElementById('analysisProgressModal');
+                            analysisModal = new bootstrap.Modal(modalEl, {
+                                backdrop: 'static',
+                                keyboard: false
+                            });
+                        }
+
+                        // Update modal content
+                        document.getElementById('modalVideoTitle').textContent =
+                            `Analyzing: ${video.title.substring(0, 50)}${video.title.length > 50 ? '...' : ''}`;
+
+                        // Check if modal is actually visible in DOM (has 'show' class)
+                        const isCurrentlyVisible = modalEl.classList.contains('show');
+
+                        // Only show if not already visible
+                        if (!isCurrentlyVisible) {
+                            analysisModal.show();
+                        }
+                    } else {
+                        // No analysis running - hide modal if visible
+                        if (modalEl && modalEl.classList.contains('show')) {
+                            analysisModal.hide();
+                        }
+                    }
+                })
+                .catch(error => console.error('Error checking analysis status:', error));
+        }
+
+        // Start checking when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAnalysisStatus();  // Check immediately
+            analysisCheckInterval = setInterval(checkAnalysisStatus, 5000);  // Then every 5 seconds
+        });
+
+        // Clean up interval when page unloads
+        window.addEventListener('beforeunload', function() {
+            if (analysisCheckInterval) {
+                clearInterval(analysisCheckInterval);
+            }
+        });
+    </script>
+
+    <!-- Dark Mode Toggle -->
+    <script>
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const darkModeIcon = document.getElementById('darkModeIcon');
+        const htmlElement = document.documentElement;
+
+        // Check for saved theme preference or default to light mode
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        htmlElement.setAttribute('data-theme', currentTheme);
+        updateDarkModeIcon(currentTheme);
+
+        darkModeToggle.addEventListener('click', function() {
+            const theme = htmlElement.getAttribute('data-theme');
+            const newTheme = theme === 'light' ? 'dark' : 'light';
+
+            htmlElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateDarkModeIcon(newTheme);
+        });
+
+        function updateDarkModeIcon(theme) {
+            if (theme === 'dark') {
+                darkModeIcon.classList.remove('fa-moon');
+                darkModeIcon.classList.add('fa-sun');
+            } else {
+                darkModeIcon.classList.remove('fa-sun');
+                darkModeIcon.classList.add('fa-moon');
+            }
+        }
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
