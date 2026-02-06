@@ -13,13 +13,8 @@ jobs = {}
 @bp.route('/trigger', methods=['GET'])
 @login_required
 def trigger_form():
-    """Show analysis trigger form."""
-    # Log page view
-    email = session.get('user_email')
-    if email and current_app.activity_logger:
-        current_app.activity_logger.log_view_analysis_page(email)
-
-    return render_template('analysis/trigger.html')
+    """Redirect to videos list - analysis is now per-video only."""
+    return redirect(url_for('dashboard.videos_list'))
 
 
 @bp.route('/trigger', methods=['POST'])
