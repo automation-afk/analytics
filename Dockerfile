@@ -20,7 +20,6 @@ COPY . .
 RUN mkdir -p /app/data
 
 # Set environment variables
-ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PORT=8080
 
@@ -28,4 +27,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Run with Gunicorn
-CMD exec gunicorn --bind :$PORT --workers 2 --threads 4 --timeout 0 "app:create_app('production')"
+CMD gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
