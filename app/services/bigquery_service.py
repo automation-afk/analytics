@@ -209,19 +209,67 @@ class BigQueryService:
             # Construct YouTube URL if not present in database
             video_url = row.video_url if row.video_url else f"https://www.youtube.com/watch?v={row.video_id}"
 
+            # Get description - try main table first, fallback to SERP table
+            description = row.description
+            if not description or (isinstance(description, str) and not description.strip()):
+                description = self._get_description_from_serp(video_id)
+
             return Video(
                 video_id=row.video_id,
                 channel_code=row.channel_code,
                 title=row.title,
                 published_date=row.published_date,
                 video_url=video_url,
-                description=row.description,
+                description=description,
                 has_analysis=False,
                 latest_analysis_date=None
             )
 
         logger.warning(f"Video not found: {video_id}")
         return None
+
+    def _get_description_from_serp(self, video_id: str) -> Optional[str]:
+        """
+        Fetch video description from SERP table as fallback.
+
+        Args:
+            video_id: YouTube video ID
+
+        Returns:
+            Description text or None if not found
+        """
+        try:
+            query = """
+            SELECT Description
+            FROM `company-wide-370010.1_YT_Serp_result.ALL_Time YT Serp`
+            WHERE video_id = @video_id
+              AND Description IS NOT NULL
+              AND TRIM(Description) != ''
+              AND published_date IS NOT NULL
+              AND Scrape_date IS NOT NULL
+            ORDER BY Scrape_date DESC
+            LIMIT 1
+            """
+
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("video_id", "STRING", video_id)
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = query_job.result()
+
+            for row in results:
+                if row.Description:
+                    logger.info(f"Found description from SERP table for video: {video_id}")
+                    return row.Description
+
+            logger.debug(f"No description found in SERP table for video: {video_id}")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Error fetching description from SERP table: {str(e)}")
+            return None
 
     def get_transcript(self, video_id: str) -> Optional[str]:
         """
@@ -254,9 +302,188 @@ class BigQueryService:
         logger.warning(f"Transcript not found for video: {video_id}")
         return None
 
+    def get_yt_analytics_by_source(self, video_id: str, days: int = 90) -> List[Dict]:
+        """
+        Fetch YouTube Analytics data by traffic source for the last N days.
+
+        Args:
+            video_id: YouTube video ID
+            days: Number of days to look back (default 90)
+
+        Returns:
+            List of dictionaries with traffic source metrics
+        """
+        query = """
+        SELECT
+            yt.Date,
+            yt.channel,
+            yt.Traffic_source,
+            yt.views,
+            yt.impression,
+            yt.impression_CTR,
+            yt.average_view_percentage,
+            gi.video_title,
+            gi.main_keyword,
+            gi.silo
+        FROM `company-wide-370010.Digibot.Digibot_YT_analytics` yt
+        JOIN `company-wide-370010.Digibot.Digibot_General_info` gi
+            ON yt.Video_ID = gi.video_id
+        WHERE yt.Video_ID = @video_id
+          AND yt.Date >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)
+        ORDER BY yt.Date DESC, yt.Traffic_source
+        """
+
+        try:
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
+                    bigquery.ScalarQueryParameter("days", "INT64", days)
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = query_job.result()
+
+            analytics_data = []
+            for row in results:
+                analytics_data.append({
+                    'date': row.Date.isoformat() if row.Date else None,
+                    'channel': row.channel,
+                    'traffic_source': row.Traffic_source,
+                    'views': int(row.views) if row.views else 0,
+                    'impressions': int(row.impression) if row.impression else 0,
+                    'impression_ctr': float(row.impression_CTR) if row.impression_CTR else 0.0,
+                    'avg_view_percentage': float(row.average_view_percentage) if row.average_view_percentage else 0.0,
+                    'video_title': row.video_title,
+                    'main_keyword': row.main_keyword,
+                    'silo': row.silo
+                })
+
+            logger.info(f"Fetched {len(analytics_data)} YT Analytics records for video: {video_id}")
+            return analytics_data
+
+        except Exception as e:
+            logger.error(f"Error fetching YT Analytics data: {str(e)}")
+            return []
+
+    def get_yt_analytics_summary(self, video_id: str, days: int = 90) -> Dict:
+        """
+        Get aggregated YouTube Analytics summary by traffic source.
+
+        Args:
+            video_id: YouTube video ID
+            days: Number of days to look back (default 90)
+
+        Returns:
+            Dictionary with summary metrics by traffic source
+        """
+        query = """
+        WITH source_metrics AS (
+            SELECT
+                yt.Traffic_source,
+                SUM(yt.views) as total_views,
+                SUM(yt.impression) as total_impressions,
+                AVG(yt.impression_CTR) as avg_ctr,
+                AVG(yt.average_view_percentage) as avg_view_pct,
+                COUNT(*) as data_points
+            FROM `company-wide-370010.Digibot.Digibot_YT_analytics` yt
+            WHERE yt.Video_ID = @video_id
+              AND yt.Date >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)
+            GROUP BY yt.Traffic_source
+        ),
+        video_info AS (
+            SELECT
+                gi.video_title,
+                gi.main_keyword,
+                gi.silo,
+                gi.presenter as channel
+            FROM `company-wide-370010.Digibot.Digibot_General_info` gi
+            WHERE gi.video_id = @video_id
+            LIMIT 1
+        )
+        SELECT
+            sm.Traffic_source,
+            sm.total_views,
+            sm.total_impressions,
+            ROUND(sm.avg_ctr, 2) as avg_ctr,
+            ROUND(sm.avg_view_pct, 2) as avg_view_pct,
+            sm.data_points,
+            vi.video_title,
+            vi.main_keyword,
+            vi.silo,
+            vi.channel
+        FROM source_metrics sm
+        CROSS JOIN video_info vi
+        ORDER BY sm.total_views DESC
+        """
+
+        try:
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
+                    bigquery.ScalarQueryParameter("days", "INT64", days)
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = query_job.result()
+
+            by_source = []
+            video_info = {}
+            total_views = 0
+            total_impressions = 0
+
+            for row in results:
+                by_source.append({
+                    'traffic_source': row.Traffic_source,
+                    'views': int(row.total_views) if row.total_views else 0,
+                    'impressions': int(row.total_impressions) if row.total_impressions else 0,
+                    'avg_ctr': float(row.avg_ctr) if row.avg_ctr else 0.0,
+                    'avg_view_percentage': float(row.avg_view_pct) if row.avg_view_pct else 0.0,
+                    'data_points': int(row.data_points) if row.data_points else 0
+                })
+                total_views += int(row.total_views) if row.total_views else 0
+                total_impressions += int(row.total_impressions) if row.total_impressions else 0
+
+                # Get video info from first row
+                if not video_info:
+                    video_info = {
+                        'video_title': row.video_title,
+                        'main_keyword': row.main_keyword,
+                        'silo': row.silo,
+                        'channel': row.channel
+                    }
+
+            # Calculate overall CTR
+            overall_ctr = (total_views / total_impressions * 100) if total_impressions > 0 else 0.0
+
+            summary = {
+                'video_id': video_id,
+                'days_analyzed': days,
+                'total_views': total_views,
+                'total_impressions': total_impressions,
+                'overall_ctr': round(overall_ctr, 2),
+                'by_traffic_source': by_source,
+                **video_info
+            }
+
+            logger.info(f"Generated YT Analytics summary for video: {video_id} ({len(by_source)} traffic sources)")
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error getting YT Analytics summary: {str(e)}")
+            return {
+                'video_id': video_id,
+                'days_analyzed': days,
+                'total_views': 0,
+                'total_impressions': 0,
+                'overall_ctr': 0.0,
+                'by_traffic_source': [],
+                'error': str(e)
+            }
+
     def get_revenue_metrics(self, video_id: str) -> Optional[RevenueMetrics]:
         """
         Fetch aggregated revenue metrics for a video across all months.
+        Includes CTR data from YT Analytics table.
 
         Args:
             video_id: YouTube video ID
@@ -265,19 +492,57 @@ class BigQueryService:
             RevenueMetrics object with totals or None if not found
         """
         query = """
+        WITH monthly_metrics AS (
+            SELECT
+                m.video_id,
+                g.presenter as channel,
+                g.video_title,
+                g.main_keyword,
+                m.metrics_month_year,
+                m.revenue,
+                m.clicks,
+                m.sales,
+                m.organic_views
+            FROM `company-wide-370010.Digibot.Metrics_by_Month` m
+            LEFT JOIN `company-wide-370010.Digibot.Digibot_General_info` g
+              ON m.video_id = g.video_id
+            WHERE m.video_id = @video_id
+        ),
+        yt_analytics AS (
+            SELECT
+                y.Video_ID,
+                AVG(y.impression_CTR) as avg_impression_ctr
+            FROM `company-wide-370010.Digibot.Digibot_YT_analytics` y
+            WHERE y.Video_ID = @video_id
+            GROUP BY y.Video_ID
+        ),
+        totals AS (
+            SELECT
+                mm.video_id,
+                MAX(mm.channel) as channel,
+                MAX(mm.metrics_month_year) as latest_month,
+                SUM(mm.revenue) as total_revenue,
+                SUM(mm.clicks) as total_clicks,
+                SUM(mm.sales) as total_sales,
+                SUM(mm.organic_views) as total_views,
+                SAFE_DIVIDE(SUM(mm.sales), SUM(mm.organic_views)) * 100 as conversion_rate,
+                SAFE_DIVIDE(SUM(mm.revenue), SUM(mm.clicks)) as revenue_per_click
+            FROM monthly_metrics mm
+            GROUP BY mm.video_id
+        )
         SELECT
-            m.video_id,
-            g.presenter as channel,
-            MAX(m.metrics_month_year) as latest_month,
-            SUM(m.revenue) as total_revenue,
-            SUM(m.clicks) as total_clicks,
-            SUM(m.sales) as total_sales,
-            SUM(m.organic_views) as total_views
-        FROM `company-wide-370010.Digibot.Metrics_by_Month` m
-        LEFT JOIN `company-wide-370010.Digibot.Digibot_General_info` g
-          ON m.video_id = g.video_id
-        WHERE m.video_id = @video_id
-        GROUP BY m.video_id, g.presenter
+            t.video_id,
+            t.channel,
+            t.latest_month,
+            t.total_revenue,
+            t.total_clicks,
+            t.total_sales,
+            t.total_views,
+            ROUND(t.conversion_rate, 3) as conversion_rate,
+            ROUND(t.revenue_per_click, 2) as revenue_per_click,
+            ROUND(y.avg_impression_ctr, 2) as avg_impression_ctr
+        FROM totals t
+        LEFT JOIN yt_analytics y ON t.video_id = y.Video_ID
         """
 
         job_config = bigquery.QueryJobConfig(
@@ -294,10 +559,13 @@ class BigQueryService:
             sales = int(row.total_sales) if row.total_sales else 0
             views = int(row.total_views) if row.total_views else 0
 
-            # Calculate derived metrics
-            conversion_rate = (sales / clicks * 100) if clicks > 0 else 0.0
-            revenue_per_click = (revenue / clicks) if clicks > 0 else 0.0
+            # Use BigQuery calculated metrics (more accurate)
+            conversion_rate = float(row.conversion_rate) if row.conversion_rate else 0.0
+            revenue_per_click = float(row.revenue_per_click) if row.revenue_per_click else 0.0
             revenue_per_1k_views = (revenue / views * 1000) if views > 0 else 0.0
+
+            # Get CTR from YT Analytics (already in percentage format)
+            impression_ctr = float(row.avg_impression_ctr) if row.avg_impression_ctr else 0.0
 
             return RevenueMetrics(
                 video_id=row.video_id,
@@ -309,7 +577,8 @@ class BigQueryService:
                 organic_views=views,
                 conversion_rate=conversion_rate,
                 revenue_per_click=revenue_per_click,
-                revenue_per_1k_views=revenue_per_1k_views
+                revenue_per_1k_views=revenue_per_1k_views,
+                impression_ctr=impression_ctr
             )
 
         logger.warning(f"Revenue metrics not found for video: {video_id}")
@@ -472,7 +741,8 @@ class BigQueryService:
                 'analyzed_videos': 0,
                 'avg_script_quality': 0.0,
                 'avg_hook_score': 0.0,
-                'avg_cta_score': 0.0
+                'avg_cta_score': 0.0,
+                'avg_conversion_rate': 0.0
             }
 
         import sqlite3
@@ -480,6 +750,7 @@ class BigQueryService:
             conn = sqlite3.connect(self.local_db.db_path)
             cursor = conn.cursor()
 
+            # Get script analysis stats
             cursor.execute("""
             SELECT
                 COUNT(DISTINCT video_id) as analyzed_videos,
@@ -488,16 +759,28 @@ class BigQueryService:
                 AVG(call_to_action_score) as avg_cta_score
             FROM script_analysis
             """)
+            script_row = cursor.fetchone()
 
-            row = cursor.fetchone()
+            # Get avg conversion rate from conversion_analysis table
+            cursor.execute("""
+            SELECT AVG(conversion_rate) as avg_conversion_rate
+            FROM conversion_analysis
+            WHERE conversion_rate IS NOT NULL AND conversion_rate > 0
+            """)
+            conv_row = cursor.fetchone()
             conn.close()
 
-            if row and row[0]:
+            avg_conversion_rate = 0.0
+            if conv_row and conv_row[0]:
+                avg_conversion_rate = round(conv_row[0], 2)
+
+            if script_row and script_row[0]:
                 return {
-                    'analyzed_videos': row[0] or 0,
-                    'avg_script_quality': round(row[1], 1) if row[1] else 0.0,
-                    'avg_hook_score': round(row[2], 1) if row[2] else 0.0,
-                    'avg_cta_score': round(row[3], 1) if row[3] else 0.0
+                    'analyzed_videos': script_row[0] or 0,
+                    'avg_script_quality': round(script_row[1], 1) if script_row[1] else 0.0,
+                    'avg_hook_score': round(script_row[2], 1) if script_row[2] else 0.0,
+                    'avg_cta_score': round(script_row[3], 1) if script_row[3] else 0.0,
+                    'avg_conversion_rate': avg_conversion_rate
                 }
         except Exception as e:
             logger.error(f"Error getting local analysis stats: {str(e)}")
@@ -506,7 +789,8 @@ class BigQueryService:
             'analyzed_videos': 0,
             'avg_script_quality': 0.0,
             'avg_hook_score': 0.0,
-            'avg_cta_score': 0.0
+            'avg_cta_score': 0.0,
+            'avg_conversion_rate': 0.0
         }
 
     def get_dashboard_stats(self) -> DashboardStats:
@@ -556,7 +840,7 @@ class BigQueryService:
                     avg_script_quality=analysis_stats['avg_script_quality'],
                     avg_hook_score=analysis_stats['avg_hook_score'],
                     avg_cta_score=analysis_stats['avg_cta_score'],
-                    avg_conversion_rate=0.0,
+                    avg_conversion_rate=analysis_stats['avg_conversion_rate'],
                     total_revenue=round(row.total_revenue, 2),
                     total_views=row.total_videos,
                     avg_revenue_per_video=round(row.avg_revenue_per_video, 2)

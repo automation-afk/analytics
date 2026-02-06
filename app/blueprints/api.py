@@ -211,7 +211,7 @@ def get_analysis_status():
 @login_required
 def trigger_analysis():
     """
-    Trigger analysis (JSON endpoint).
+    Trigger analysis (JSON endpoint) - runs in background.
 
     Request body:
         {
@@ -220,7 +220,7 @@ def trigger_analysis():
         }
 
     Returns:
-        {"job_id": "uuid", "status": "pending"}
+        {"status": "started", "video_id": "..."}
     """
     data = request.get_json()
     video_id = data.get('video_id')
@@ -229,31 +229,628 @@ def trigger_analysis():
     if not video_id:
         return jsonify({'error': 'video_id is required'}), 400
 
-    # Import here to avoid circular dependency
-    from app.services.analysis_service import AnalysisService
-    import uuid
-
-    analysis_service = AnalysisService(
-        bigquery_service=current_app.bigquery,
-        anthropic_api_key=current_app.config['ANTHROPIC_API_KEY']
-    )
-
-    job_id = str(uuid.uuid4())
-
-    try:
-        # Run analysis
-        result = analysis_service.analyze_video(video_id, analysis_types)
-
+    # Check if already analyzing
+    if cache.get(f'analyzing_{video_id}'):
         return jsonify({
-            'job_id': job_id,
-            'status': 'completed',
-            'video_id': video_id,
-            'message': 'Analysis completed successfully'
+            'status': 'already_running',
+            'message': 'Analysis is already in progress for this video'
         })
 
-    except Exception as e:
+    import threading
+
+    cache.set(f'analyzing_{video_id}', True, timeout=600)  # 10 min timeout
+    cache.set(f'analysis_progress_{video_id}', {
+        'step': 'starting',
+        'progress': 0,
+        'message': 'Starting analysis...'
+    }, timeout=600)
+
+    app = current_app._get_current_object()
+
+    def run_analysis():
+        def progress_callback(step, progress, message):
+            """Update progress in cache."""
+            with app.app_context():
+                cache.set(f'analysis_progress_{video_id}', {
+                    'step': step,
+                    'progress': progress,
+                    'message': message
+                }, timeout=600)
+
+        try:
+            with app.app_context():
+                from app.services.analysis_service import AnalysisService
+
+                analysis_service = AnalysisService(
+                    bigquery_service=app.bigquery,
+                    anthropic_api_key=app.config['ANTHROPIC_API_KEY']
+                )
+
+                # Calculate progress increments based on selected types
+                total_steps = len(analysis_types)
+                step_progress = 80 // max(total_steps, 1)  # Reserve 20% for start/end
+
+                progress_callback('starting', 5, 'Fetching video data...')
+
+                # Run analysis with progress updates
+                result = analysis_service.analyze_video(
+                    video_id,
+                    analysis_types,
+                    progress_callback=progress_callback
+                )
+
+                if result:
+                    progress_callback('completed', 100, 'Analysis complete!')
+                else:
+                    cache.set(f'analysis_error_{video_id}', 'Analysis failed. Check server logs.', timeout=300)
+
+        except Exception as e:
+            import traceback
+            import logging
+            logger = logging.getLogger(__name__)
+            error_msg = str(e)
+            logger.error(f"Analysis error for {video_id}: {error_msg}")
+            logger.error(traceback.format_exc())
+            with app.app_context():
+                cache.set(f'analysis_error_{video_id}', error_msg, timeout=300)
+        finally:
+            with app.app_context():
+                cache.delete(f'analyzing_{video_id}')
+                cache.delete(f'analysis_progress_{video_id}')
+
+    thread = threading.Thread(target=run_analysis)
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'video_id': video_id,
+        'message': 'Analysis started in background'
+    })
+
+
+@bp.route('/analysis/status/<video_id>')
+@login_required
+def get_analysis_status_by_video(video_id):
+    """
+    Get the current status and progress of an analysis job for a specific video.
+
+    Args:
+        video_id: YouTube video ID
+
+    Returns:
+        {
+            "status": "processing|completed|error|not_found",
+            "step": "starting|script|description|affiliate|conversion|completed",
+            "progress": 0-100,
+            "message": "...",
+            "error": "error message if status is error"
+        }
+    """
+    # Check for errors first
+    error_msg = cache.get(f'analysis_error_{video_id}')
+    if error_msg:
+        cache.delete(f'analysis_error_{video_id}')
         return jsonify({
-            'job_id': job_id,
-            'status': 'failed',
-            'error': str(e)
+            'status': 'error',
+            'step': None,
+            'progress': 0,
+            'error': error_msg
+        })
+
+    # Check if analyzing
+    is_analyzing = cache.get(f'analyzing_{video_id}')
+
+    if not is_analyzing:
+        return jsonify({
+            'status': 'not_running',
+            'step': None,
+            'progress': 0
+        })
+
+    # Get progress details from cache
+    progress_data = cache.get(f'analysis_progress_{video_id}') or {}
+
+    return jsonify({
+        'status': 'processing',
+        'step': progress_data.get('step', 'starting'),
+        'progress': progress_data.get('progress', 5),
+        'message': progress_data.get('message', 'Processing...')
+    })
+
+
+# ==================== TRANSCRIPTION ENDPOINTS ====================
+
+@bp.route('/transcribe', methods=['POST'])
+@login_required
+def transcribe_video():
+    """
+    Transcribe a YouTube video with optional AI analysis.
+
+    Request body:
+        {
+            "video_id": "video_id",
+            "generate_transcript": true,  // Generate new transcript (downloads video)
+            "analyze_emotions": true,     // Generate new emotion analysis
+            "analyze_frames": true,       // Generate new frame analysis
+            "generate_insights": true,    // Generate AI content insights (uses new + existing data)
+            "frame_interval": 10,         // Seconds between frames (if analyze_frames=true)
+            "store_segments": false       // Include timestamp segments
+        }
+
+    Returns:
+        {"status": "started", "video_id": "..."}
+    """
+    data = request.get_json()
+    video_id = data.get('video_id')
+    generate_transcript = data.get('generate_transcript', True)
+    analyze_emotions = data.get('analyze_emotions', False)
+    analyze_frames = data.get('analyze_frames', False)
+    generate_insights = data.get('generate_insights', True)
+    frame_interval = data.get('frame_interval')
+    store_segments = data.get('store_segments', False)
+
+    if not video_id:
+        return jsonify({'error': 'video_id is required'}), 400
+
+    # Validate at least one option is selected
+    if not generate_transcript and not analyze_emotions and not analyze_frames and not generate_insights:
+        return jsonify({'error': 'At least one option must be selected'}), 400
+
+    import os
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Get existing data
+    existing = current_app.local_db.get_transcript(video_id)
+
+    # Check if we need to download video (transcript, emotions, or frames require it)
+    needs_download = generate_transcript or analyze_emotions or analyze_frames
+
+    # If only generating insights and no existing transcript data, error
+    if not needs_download and generate_insights and not existing:
+        return jsonify({'error': 'No existing data found. Enable transcript, emotions, or frames to download video first.'}), 400
+
+    # If only generating insights from existing data (no download needed)
+    if not needs_download and generate_insights and existing:
+        # Just regenerate insights from existing data
+        try:
+            from app.services.multimodal_analyzer import MultimodalAnalyzer
+            anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
+
+            if not anthropic_api_key:
+                return jsonify({'error': 'ANTHROPIC_API_KEY not configured'}), 500
+
+            logger.info(f"Generating insights for {video_id} from existing data")
+            logger.info(f"  - Has transcript: {bool(existing.get('transcript'))}")
+            logger.info(f"  - Has emotions: {bool(existing.get('emotions'))}")
+            logger.info(f"  - Has frames: {bool(existing.get('frame_analysis'))}")
+
+            analyzer = MultimodalAnalyzer(anthropic_api_key)
+            insights = analyzer.analyze_content(
+                transcript=existing.get('transcript', ''),
+                emotions=existing.get('emotions'),
+                frame_analysis=existing.get('frame_analysis'),
+                title=existing.get('title', ''),
+                duration_seconds=existing.get('duration_seconds', 0)
+            )
+
+            # Check if analysis failed
+            if insights.get('analysis_status') == 'failed':
+                logger.error(f"Insights analysis failed: {insights.get('content_summary', 'Unknown error')}")
+                return jsonify({'error': f'Analysis failed: {insights.get("content_summary", "Unknown error")}'}), 500
+
+            logger.info(f"Insights generated successfully for {video_id}")
+            current_app.local_db.update_content_insights(video_id, insights)
+
+            return jsonify({
+                'status': 'completed',
+                'message': 'Insights generated from existing data',
+                'video_id': video_id
+            })
+        except Exception as e:
+            logger.error(f"Error generating insights: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify({'error': f'Failed to generate insights: {str(e)}'}), 500
+
+    # Pre-check: Verify required dependencies for download
+    groq_key = os.getenv('GROQ_API_KEY')
+    openai_key = os.getenv('OPENAI_API_KEY')
+
+    if generate_transcript and not groq_key and not openai_key:
+        return jsonify({'error': 'No transcription API key configured (GROQ_API_KEY or OPENAI_API_KEY)'}), 500
+
+    if analyze_emotions and not os.getenv('HUME_API_KEY'):
+        return jsonify({'error': 'HUME_API_KEY not configured but emotion analysis is enabled'}), 500
+
+    try:
+        import yt_dlp
+    except ImportError:
+        return jsonify({'error': 'yt-dlp not installed. Run: pip install yt-dlp'}), 500
+
+    from app.services.transcription_service import TranscriptionService
+    import threading
+
+    cache.set(f'transcribing_{video_id}', True, timeout=900)
+    cache.set(f'transcribe_progress_{video_id}', {'step': 'download', 'progress': 0, 'message': 'Starting...'}, timeout=900)
+    app = current_app._get_current_object()
+
+    def run_transcription():
+        def progress_callback(step, progress, message):
+            with app.app_context():
+                cache.set(f'transcribe_progress_{video_id}', {
+                    'step': step,
+                    'progress': progress,
+                    'message': message
+                }, timeout=900)
+
+        try:
+            with app.app_context():
+                service = TranscriptionService()
+
+                # Run transcription with selected options
+                result = service.transcribe_video(
+                    video_id,
+                    frame_interval=frame_interval if analyze_frames else None,
+                    store_segments=store_segments,
+                    analyze_frames=analyze_frames,
+                    analyze_emotions=analyze_emotions,
+                    generate_transcript=generate_transcript,
+                    generate_insights=generate_insights,
+                    existing_data=existing,  # Pass existing data for merging
+                    progress_callback=progress_callback
+                )
+
+                if result:
+                    progress_callback('save', 98, 'Storing in database...')
+
+                    # Merge with existing data for fields not regenerated
+                    final_transcript = result.get('transcript') or (existing.get('transcript') if existing else None)
+                    final_emotions = result.get('emotions') or (existing.get('emotions') if existing else None)
+                    final_frames = result.get('frame_analysis') or (existing.get('frame_analysis') if existing else None)
+                    final_insights = result.get('content_insights') or (existing.get('content_insights') if existing else None)
+
+                    app.local_db.store_transcript(
+                        video_id=result['video_id'],
+                        title=result.get('title') or (existing.get('title') if existing else ''),
+                        channel=result.get('channel') or (existing.get('channel') if existing else ''),
+                        duration_seconds=result.get('duration_seconds') or (existing.get('duration_seconds') if existing else 0),
+                        transcript=final_transcript or '',
+                        word_count=result.get('word_count') or (existing.get('word_count') if existing else 0),
+                        provider=result.get('provider') or (existing.get('provider') if existing else 'unknown'),
+                        segments=result.get('segments'),
+                        frames=result.get('frame_timestamps'),
+                        frame_interval=result.get('frame_interval_seconds'),
+                        frame_analysis=final_frames,
+                        emotions=final_emotions,
+                        description=result.get('description') or (existing.get('description') if existing else None),
+                        content_insights=final_insights
+                    )
+                    progress_callback('completed', 100, 'Complete!')
+                else:
+                    with app.app_context():
+                        cache.set(f'transcribe_error_{video_id}', 'Processing failed. Check server logs.', timeout=300)
+        except Exception as e:
+            import traceback
+            error_msg = str(e)
+            logger.error(f"Transcription error for {video_id}: {error_msg}")
+            logger.error(traceback.format_exc())
+            with app.app_context():
+                cache.set(f'transcribe_error_{video_id}', error_msg, timeout=300)
+        finally:
+            with app.app_context():
+                cache.delete(f'transcribing_{video_id}')
+                cache.delete(f'transcribe_progress_{video_id}')
+
+    thread = threading.Thread(target=run_transcription)
+    thread.daemon = True
+    thread.start()
+
+    features = []
+    if generate_transcript:
+        features.append("transcript")
+    if analyze_emotions:
+        features.append("emotions")
+    if analyze_frames:
+        features.append("frames")
+    if generate_insights:
+        features.append("insights")
+
+    return jsonify({
+        'status': 'started',
+        'message': f'Processing: {", ".join(features)}',
+        'video_id': video_id
+    })
+
+
+@bp.route('/transcript/<video_id>')
+@login_required
+def get_transcript(video_id):
+    """Get transcript for a video."""
+    # Check if transcribing
+    is_transcribing = cache.get(f'transcribing_{video_id}') or False
+
+    transcript = current_app.local_db.get_transcript(video_id)
+
+    if not transcript:
+        return jsonify({
+            'exists': False,
+            'is_transcribing': is_transcribing
+        })
+
+    return jsonify({
+        'exists': True,
+        'is_transcribing': False,
+        'transcript': transcript
+    })
+
+
+@bp.route('/transcript/<video_id>/history')
+@login_required
+def get_transcript_history(video_id):
+    """Get historical transcript data for a video."""
+    limit = request.args.get('limit', 10, type=int)
+    history = current_app.local_db.get_transcript_history(video_id, limit)
+
+    return jsonify({
+        'video_id': video_id,
+        'history': history,
+        'count': len(history)
+    })
+
+
+@bp.route('/transcript/history/<int:history_id>')
+@login_required
+def get_transcript_history_detail(history_id):
+    """Get full details of a historical transcript entry."""
+    detail = current_app.local_db.get_transcript_history_detail(history_id)
+
+    if not detail:
+        return jsonify({'error': 'History entry not found'}), 404
+
+    return jsonify(detail)
+
+
+@bp.route('/transcript/<video_id>', methods=['DELETE'])
+@login_required
+def delete_transcript(video_id):
+    """Delete transcript to allow re-transcription."""
+    success = current_app.local_db.delete_transcript(video_id)
+
+    if success:
+        return jsonify({'status': 'deleted', 'video_id': video_id})
+    else:
+        return jsonify({'error': 'Failed to delete transcript'}), 500
+
+
+@bp.route('/transcripts')
+@login_required
+def list_transcripts():
+    """Get all stored transcripts (history)."""
+    limit = request.args.get('limit', 50, type=int)
+    transcripts = current_app.local_db.get_all_transcripts(limit)
+
+    return jsonify({
+        'transcripts': transcripts,
+        'count': len(transcripts)
+    })
+
+
+@bp.route('/transcribe/status/<video_id>')
+@login_required
+def get_transcribe_status(video_id):
+    """
+    Get the current status and progress of a transcription job.
+
+    Args:
+        video_id: YouTube video ID
+
+    Returns:
+        {
+            "status": "processing|completed|error|not_found",
+            "step": "download|transcribe|emotions|frames|save",
+            "progress": 0-100,
+            "error": "error message if status is error"
+        }
+    """
+    # Check for errors first
+    error_msg = cache.get(f'transcribe_error_{video_id}')
+    if error_msg:
+        cache.delete(f'transcribe_error_{video_id}')  # Clear after reading
+        return jsonify({
+            'status': 'error',
+            'step': None,
+            'progress': 0,
+            'error': error_msg
+        })
+
+    # Check if transcribing
+    is_transcribing = cache.get(f'transcribing_{video_id}')
+
+    if not is_transcribing:
+        # Check if transcript exists (completed)
+        transcript = current_app.local_db.get_transcript(video_id)
+        if transcript:
+            return jsonify({
+                'status': 'completed',
+                'step': 'completed',
+                'progress': 100
+            })
+        else:
+            return jsonify({
+                'status': 'not_found',
+                'step': None,
+                'progress': 0
+            })
+
+    # Get progress details from cache
+    progress_data = cache.get(f'transcribe_progress_{video_id}') or {}
+
+    return jsonify({
+        'status': 'processing',
+        'step': progress_data.get('step', 'download'),
+        'progress': progress_data.get('progress', 5),
+        'message': progress_data.get('message', 'Processing...')
+    })
+
+
+@bp.route('/transcribe/status')
+@login_required
+def get_all_transcribe_status():
+    """
+    Check if any transcriptions are currently running.
+
+    Returns:
+        {
+            "is_transcribing": true/false,
+            "videos_transcribing": [
+                {"video_id": "...", "title": "...", "progress": 50, "message": "..."},
+                ...
+            ]
+        }
+    """
+    videos_transcribing = []
+
+    # Get recent videos to check for transcribing status
+    recent_videos = current_app.bigquery.get_videos(limit=200)
+
+    for video in recent_videos:
+        is_transcribing = cache.get(f'transcribing_{video.video_id}')
+        if is_transcribing:
+            progress_data = cache.get(f'transcribe_progress_{video.video_id}') or {}
+            videos_transcribing.append({
+                'video_id': video.video_id,
+                'title': video.title,
+                'channel_code': video.channel_code,
+                'progress': progress_data.get('progress', 0),
+                'step': progress_data.get('step', 'download'),
+                'message': progress_data.get('message', 'Processing...')
+            })
+
+    return jsonify({
+        'is_transcribing': len(videos_transcribing) > 0,
+        'videos_transcribing': videos_transcribing,
+        'count': len(videos_transcribing)
+    })
+
+
+@bp.route('/regenerate-insights/<video_id>', methods=['POST'])
+@login_required
+def regenerate_insights(video_id):
+    """
+    Regenerate AI Content Insights using existing transcript data.
+
+    Request body:
+        {
+            "use_transcript": true,    // Include transcript text in analysis
+            "use_emotions": true,      // Include emotion data (if available)
+            "use_frames": true         // Include frame analysis data (if available)
+        }
+
+    Returns:
+        {"status": "success|error", "message": "...", "insights": {...}}
+    """
+    import os
+
+    # Get existing transcript data
+    transcript_data = current_app.local_db.get_transcript(video_id)
+    if not transcript_data:
+        return jsonify({
+            'status': 'error',
+            'message': 'No transcript data found for this video. Run Transcribe & Analyze first.'
+        }), 404
+
+    # Parse request options
+    data = request.get_json() or {}
+    use_transcript = data.get('use_transcript', True)
+    use_emotions = data.get('use_emotions', True)
+    use_frames = data.get('use_frames', True)
+
+    # Validate at least one source is selected
+    if not use_transcript and not use_emotions and not use_frames:
+        return jsonify({
+            'status': 'error',
+            'message': 'At least one data source must be selected.'
+        }), 400
+
+    # Check API key
+    anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
+    if not anthropic_api_key:
+        return jsonify({
+            'status': 'error',
+            'message': 'ANTHROPIC_API_KEY not configured.'
+        }), 500
+
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        from app.services.multimodal_analyzer import MultimodalAnalyzer
+
+        # Prepare data based on selected options
+        transcript_text = transcript_data.get('transcript') if use_transcript else None
+        emotions = transcript_data.get('emotions') if use_emotions else None
+        frame_analysis = transcript_data.get('frame_analysis') if use_frames else None
+
+        logger.info(f"Regenerating insights for {video_id}: transcript={bool(transcript_text)}, emotions={bool(emotions)}, frames={bool(frame_analysis)}")
+
+        # Check if selected sources have data
+        sources_with_data = []
+        if use_transcript and transcript_text:
+            sources_with_data.append('transcript')
+        if use_emotions and emotions:
+            sources_with_data.append('emotions')
+        if use_frames and frame_analysis:
+            sources_with_data.append('frames')
+
+        if not sources_with_data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Selected data sources have no data. Try selecting different sources.'
+            }), 400
+
+        logger.info(f"Running multimodal analysis with sources: {sources_with_data}")
+
+        # Run multimodal analysis
+        analyzer = MultimodalAnalyzer(anthropic_api_key)
+        insights = analyzer.analyze_content(
+            transcript=transcript_text or '',
+            emotions=emotions,
+            frame_analysis=frame_analysis,
+            title=transcript_data.get('title', ''),
+            duration_seconds=transcript_data.get('duration_seconds', 0)
+        )
+
+        logger.info(f"Analysis complete, status: {insights.get('analysis_status', 'unknown')}")
+
+        # Check if analysis failed
+        if insights.get('analysis_status') == 'failed':
+            return jsonify({
+                'status': 'error',
+                'message': insights.get('content_summary', 'Analysis failed')
+            }), 500
+
+        # Store the updated insights
+        success = current_app.local_db.update_content_insights(video_id, insights)
+
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': f'Insights regenerated using: {", ".join(sources_with_data)}',
+                'insights': insights
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to save insights to database.'
+            }), 500
+
+    except Exception as e:
+        import traceback
+        logger.error(f"Error regenerating insights for {video_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': f'Analysis failed: {str(e)[:200]}'
         }), 500

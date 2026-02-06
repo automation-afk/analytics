@@ -16,31 +16,34 @@
                         <span class="ms-2">ID: {{ video.video_id }}</span>
                     </p>
                 </div>
-                <div>
+                <div class="d-flex gap-2 flex-wrap">
                     <a href="{{ video.video_url }}" target="_blank" class="btn btn-danger">
-                        <i class="fab fa-youtube"></i> Watch on YouTube
+                        <i class="fab fa-youtube me-1"></i> Watch on YouTube
                     </a>
-                    <form method="post" action="{{ url_for('videos.analyze_single', video_id=video.video_id) }}" class="d-inline">
-                        <button type="submit" class="btn btn-primary" {% if is_analyzing %}disabled{% endif %}>
-                            <i class="fas fa-brain"></i> Re-analyze
-                        </button>
-                    </form>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#transcribeModal" {% if is_transcribing %}disabled{% endif %}>
+                        <i class="fas fa-microphone me-1"></i> Transcribe & Analyze
+                    </button>
+                    {% set has_analysis = script_analysis or description_analysis or conversion_analysis %}
+                    <button type="button" class="btn btn-primary" id="reanalyzeBtn" data-bs-toggle="modal" data-bs-target="#reanalyzeModal" {% if is_analyzing %}disabled{% endif %}>
+                        <i class="fas fa-brain me-1"></i> {% if has_analysis %}Re-analyze{% else %}Analyze{% endif %}
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Analysis In Progress Banner -->
-    {% if is_analyzing %}
+
+    <!-- Transcription In Progress Banner -->
+    {% if is_transcribing %}
     <div class="row mb-4">
         <div class="col-12">
-            <div class="alert alert-info d-flex align-items-center" role="alert">
+            <div class="alert alert-success d-flex align-items-center" role="alert">
                 <div class="spinner-border spinner-border-sm me-3" role="status">
-                    <span class="visually-hidden">Analyzing...</span>
+                    <span class="visually-hidden">Transcribing...</span>
                 </div>
                 <div class="flex-grow-1">
-                    <strong><i class="fas fa-cog fa-spin"></i> Analysis in Progress</strong>
-                    <p class="mb-0">AI analysis is currently running for this video. This takes approximately 2-3 minutes. This page will auto-refresh when complete.</p>
+                    <strong><i class="fas fa-microphone fa-pulse"></i> Transcription in Progress</strong>
+                    <p class="mb-0">Video transcription and analysis is currently running. This may take several minutes. This page will auto-refresh when complete.</p>
                 </div>
             </div>
         </div>
@@ -84,6 +87,27 @@
         </div>
     </div>
     {% endif %}
+
+    <!-- Video Description -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Video Description</h5>
+                </div>
+                <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                    {% set description_text = video.description or (transcript_data.description if transcript_data else None) %}
+                    {% if description_text %}
+                    <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit;">{{ description_text }}</pre>
+                    {% else %}
+                    <div class="alert alert-secondary mb-0">
+                        <i class="fas fa-info-circle"></i> No description available. Run "Transcribe & Analyze" to fetch from YouTube.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="row">
         <!-- Script Analysis -->
@@ -228,7 +252,18 @@
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0"><i class="fas fa-align-left"></i> Description CTR Analysis</h5>
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    {# Show Impression CTR from YT Analytics at top #}
+                    {% if revenue_metrics and revenue_metrics.impression_ctr %}
+                    <div class="alert alert-light mb-3 py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-mouse-pointer text-info me-2"></i><strong>Impression CTR:</strong></span>
+                            <span class="badge bg-info fs-6">{{ "%.2f" | format(revenue_metrics.impression_ctr) }}%</span>
+                        </div>
+                        <small class="text-muted">From YouTube Analytics (avg across all impressions)</small>
+                    </div>
+                    {% endif %}
+
                     {% if description_analysis %}
                         <div class="row mb-3">
                             <div class="col-4 text-center">
@@ -245,15 +280,77 @@
                             </div>
                         </div>
 
+                        {# YT Analytics Traffic Source Data #}
+                        {% if description_analysis.yt_by_traffic_source %}
                         <div class="mb-3">
-                            <p><strong>Total Links:</strong> {{ description_analysis.total_links }}</p>
-                            <p><strong>Affiliate Links:</strong> {{ description_analysis.affiliate_links }}</p>
+                            <h6><i class="fas fa-chart-pie text-primary"></i> Traffic Sources (Last 90 Days)</h6>
+                            <div class="small">
+                                <div class="d-flex justify-content-between text-muted mb-1">
+                                    <span>Total Views: <strong>{{ description_analysis.yt_total_views | format_number }}</strong></span>
+                                    <span>Impressions: <strong>{{ description_analysis.yt_total_impressions | format_number }}</strong></span>
+                                    <span>Overall CTR: <strong>{{ "%.2f" | format(description_analysis.yt_overall_ctr) }}%</strong></span>
+                                </div>
+                                {% if description_analysis.main_keyword %}
+                                <div class="text-muted mb-2">
+                                    <i class="fas fa-key"></i> Keyword: <strong>{{ description_analysis.main_keyword }}</strong>
+                                    {% if description_analysis.silo %} | Silo: {{ description_analysis.silo }}{% endif %}
+                                </div>
+                                {% endif %}
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Traffic Source</th>
+                                            <th class="text-end">Views</th>
+                                            <th class="text-end">CTR</th>
+                                            <th class="text-end">Avg Watch</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for source in description_analysis.yt_by_traffic_source[:5] %}
+                                        <tr>
+                                            <td>{{ source.traffic_source }}</td>
+                                            <td class="text-end">{{ source.views | format_number }}</td>
+                                            <td class="text-end">{{ "%.2f" | format(source.avg_ctr) }}%</td>
+                                            <td class="text-end">{{ "%.1f" | format(source.avg_view_percentage) }}%</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            <p class="mb-1"><strong>Total Links:</strong> {{ description_analysis.total_links }}</p>
+                            <p class="mb-1"><strong>Affiliate Links:</strong> {{ description_analysis.affiliate_links }}</p>
+                        </div>
+
+                        {% if description_analysis.strengths %}
+                        <div class="mb-3">
+                            <h6><i class="fas fa-check-circle text-success"></i> Strengths:</h6>
+                            <ul class="mb-0">
+                                {% for strength in description_analysis.strengths %}
+                                <li>{{ strength }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        {% if description_analysis.missing_elements %}
+                        <div class="mb-3">
+                            <h6><i class="fas fa-exclamation-circle text-danger"></i> Missing Elements:</h6>
+                            <ul class="mb-0">
+                                {% for element in description_analysis.missing_elements %}
+                                <li>{{ element }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
 
                         {% if description_analysis.optimization_suggestions %}
                         <div>
                             <h6><i class="fas fa-lightbulb text-warning"></i> Optimization Suggestions:</h6>
-                            <ul>
+                            <ul class="mb-0">
                                 {% for suggestion in description_analysis.optimization_suggestions %}
                                 <li>{{ suggestion }}</li>
                                 {% endfor %}
@@ -263,6 +360,11 @@
                     {% else %}
                         <div class="alert alert-info">
                             <i class="fas fa-info-circle"></i> No description analysis available.
+                            {% if not video.description %}
+                            <br><small class="text-warning"><i class="fas fa-exclamation-triangle"></i> This video has no description. Run "Transcribe & Analyze" first to fetch from YouTube.</small>
+                            {% else %}
+                            Click "Re-analyze" to generate.
+                            {% endif %}
                         </div>
                     {% endif %}
                 </div>
@@ -275,43 +377,238 @@
                 <div class="card-header bg-warning">
                     <h5 class="mb-0"><i class="fas fa-chart-line"></i> Conversion Analysis</h5>
                 </div>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    {# Use conversion_analysis if available, otherwise compute from revenue_metrics #}
+                    {% set conv_rate = conversion_analysis.conversion_rate if conversion_analysis and conversion_analysis.conversion_rate else (revenue_metrics.conversion_rate if revenue_metrics else 0) %}
+                    {% set rev_per_click = conversion_analysis.revenue_per_click if conversion_analysis and conversion_analysis.revenue_per_click else (revenue_metrics.revenue_per_click if revenue_metrics else 0) %}
+                    {# Calculate click-to-sale rate #}
+                    {% set click_to_sale = (revenue_metrics.sales / revenue_metrics.clicks * 100) if revenue_metrics and revenue_metrics.clicks > 0 else 0 %}
+
+                    <div class="row mb-3">
+                        <div class="col-6 text-center">
+                            <h6>Views → Sales</h6>
+                            <h3 class="text-success">{{ "%.3f" | format(conv_rate) }}%</h3>
+                            <small class="text-muted">Conversion Rate</small>
+                        </div>
+                        <div class="col-6 text-center">
+                            <h6>Clicks → Sales</h6>
+                            <h3 class="text-info">{{ "%.1f" | format(click_to_sale) }}%</h3>
+                            <small class="text-muted">Click-to-Sale Rate</small>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6 text-center">
+                            <h6>Revenue/Click</h6>
+                            <h3 class="text-primary">{{ rev_per_click | format_currency }}</h3>
+                        </div>
+                        <div class="col-6 text-center">
+                            <h6>Revenue/1K Views</h6>
+                            <h3 class="text-warning">{{ (revenue_metrics.revenue_per_1k_views if revenue_metrics else 0) | format_currency }}</h3>
+                        </div>
+                    </div>
+
+                    {% if conversion_analysis and conversion_analysis.conversion_drivers %}
+                    <div class="mb-3">
+                        <h6><i class="fas fa-rocket text-success"></i> Conversion Drivers:</h6>
+                        <ul class="mb-0">
+                            {% for driver in conversion_analysis.conversion_drivers %}
+                            <li>{{ driver }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    {% if conversion_analysis and conversion_analysis.underperformance_reasons %}
+                    <div class="mb-3">
+                        <h6><i class="fas fa-exclamation-triangle text-danger"></i> Underperformance Reasons:</h6>
+                        <ul class="mb-0">
+                            {% for reason in conversion_analysis.underperformance_reasons %}
+                            <li>{{ reason }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    {% if conversion_analysis and conversion_analysis.recommendations %}
+                    <div>
+                        <h6><i class="fas fa-star text-warning"></i> Recommendations:</h6>
+                        <ul class="mb-0">
+                            {% for rec in conversion_analysis.recommendations %}
+                            <li>{{ rec }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% elif not conversion_analysis %}
+                    <div class="alert alert-secondary">
+                        <i class="fas fa-info-circle"></i> Click "Re-analyze" to get AI-powered conversion insights.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transcript & Emotions -->
+    {% if transcript_data %}
+    <div class="row">
+        <!-- Transcript Info -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0"><i class="fas fa-file-audio"></i> Transcript</h5>
+                </div>
                 <div class="card-body">
-                    {% if conversion_analysis %}
-                        <div class="row mb-3">
-                            <div class="col-6 text-center">
-                                <h6>Conversion Rate</h6>
-                                <h3 class="text-success">{{ conversion_analysis.conversion_rate | format_percent }}</h3>
-                            </div>
-                            <div class="col-6 text-center">
-                                <h6>Revenue/Click</h6>
-                                <h3 class="text-primary">{{ conversion_analysis.revenue_per_click | format_currency }}</h3>
+                    <div class="mb-3">
+                        <span class="badge bg-info me-2">{{ transcript_data.word_count }} words</span>
+                        <span class="badge bg-secondary me-2">{{ transcript_data.provider }}</span>
+                        {% if transcript_data.duration_seconds %}
+                        <span class="badge bg-warning">{{ (transcript_data.duration_seconds / 60)|int }} min</span>
+                        {% endif %}
+                    </div>
+
+                    {% if transcript_data.segments %}
+                    <!-- Tabs for Full Text vs With Timestamps -->
+                    <ul class="nav nav-tabs nav-sm mb-3" id="transcriptTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active py-1 px-2" id="fulltext-tab" data-bs-toggle="tab" data-bs-target="#transcript-fulltext" type="button" role="tab">
+                                <i class="fas fa-align-left me-1"></i> Full Text
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link py-1 px-2" id="timestamps-tab" data-bs-toggle="tab" data-bs-target="#transcript-timestamps" type="button" role="tab">
+                                <i class="fas fa-clock me-1"></i> With Timestamps
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content" id="transcriptTabContent">
+                        <!-- Full Text Tab -->
+                        <div class="tab-pane fade show active" id="transcript-fulltext" role="tabpanel">
+                            <div style="max-height: 250px; overflow-y: auto;">
+                                <p class="small" style="white-space: pre-wrap;">{{ transcript_data.transcript }}</p>
                             </div>
                         </div>
 
-                        {% if conversion_analysis.conversion_drivers %}
-                        <div class="mb-3">
-                            <h6><i class="fas fa-rocket text-success"></i> Conversion Drivers:</h6>
-                            <ul>
-                                {% for driver in conversion_analysis.conversion_drivers %}
-                                <li>{{ driver }}</li>
-                                {% endfor %}
-                            </ul>
+                        <!-- Timestamps Tab -->
+                        <div class="tab-pane fade" id="transcript-timestamps" role="tabpanel">
+                            <div style="max-height: 250px; overflow-y: auto;">
+                                <table class="table table-sm table-hover small mb-0">
+                                    <thead class="sticky-top bg-white">
+                                        <tr>
+                                            <th style="width: 70px;">Time</th>
+                                            <th>Text</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for segment in transcript_data.segments %}
+                                        <tr>
+                                            <td class="text-nowrap">
+                                                <span class="badge bg-secondary">{{ "%.1f" | format(segment.start) }}s</span>
+                                            </td>
+                                            <td>{{ segment.text }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                        {% endif %}
-
-                        {% if conversion_analysis.recommendations %}
-                        <div>
-                            <h6><i class="fas fa-star text-warning"></i> Recommendations:</h6>
-                            <ul>
-                                {% for rec in conversion_analysis.recommendations %}
-                                <li>{{ rec }}</li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                        {% endif %}
+                    </div>
                     {% else %}
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle"></i> No conversion analysis available.
+                    <!-- No segments - just show full text -->
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        <p class="small" style="white-space: pre-wrap;">{{ transcript_data.transcript }}</p>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        <i class="fas fa-info-circle"></i> To view with timestamps, re-run Transcribe with "Store segments" enabled.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Emotion Analysis -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header text-white" style="background-color: #6f42c1;">
+                    <h5 class="mb-0"><i class="fas fa-smile"></i> Voice Emotion Analysis</h5>
+                </div>
+                <div class="card-body">
+                    {% if transcript_data.emotions and transcript_data.emotions.summary %}
+                        <div class="mb-3">
+                            <span class="badge bg-info">{{ transcript_data.emotions.total_segments }} segments analyzed</span>
+                            <span class="badge bg-secondary">{{ transcript_data.emotions.summary|length }} emotions detected</span>
+                        </div>
+
+                        <!-- Tabs for Summary vs Timeline -->
+                        <ul class="nav nav-tabs nav-sm mb-3" id="emotionTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active py-1 px-2" id="summary-tab" data-bs-toggle="tab" data-bs-target="#emotion-summary" type="button" role="tab">
+                                    <i class="fas fa-chart-bar me-1"></i> Summary
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link py-1 px-2" id="timeline-tab" data-bs-toggle="tab" data-bs-target="#emotion-timeline" type="button" role="tab">
+                                    <i class="fas fa-clock me-1"></i> Timeline
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content" id="emotionTabContent">
+                            <!-- Summary Tab -->
+                            <div class="tab-pane fade show active" id="emotion-summary" role="tabpanel">
+                                <div style="max-height: 220px; overflow-y: auto;">
+                                    {% for emo in transcript_data.emotions.summary %}
+                                    <div class="mb-2">
+                                        <div class="d-flex justify-content-between">
+                                            <span>{{ emo.emotion }}</span>
+                                            <span class="text-muted">{{ "%.0f" | format(emo.average_score * 100) }}% <small>({{ emo.occurrences }}x)</small></span>
+                                        </div>
+                                        <div class="progress" style="height: 8px;">
+                                            <div class="progress-bar bg-primary" role="progressbar"
+                                                 style="width: {{ (emo.average_score * 100)|int }}%"></div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <!-- Timeline Tab -->
+                            <div class="tab-pane fade" id="emotion-timeline" role="tabpanel">
+                                <div style="max-height: 220px; overflow-y: auto;">
+                                    {% if transcript_data.emotions.segments %}
+                                    <table class="table table-sm table-hover small mb-0">
+                                        <thead class="sticky-top bg-white">
+                                            <tr>
+                                                <th style="width: 80px;">Time</th>
+                                                <th>Top Emotions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for seg in transcript_data.emotions.segments %}
+                                            <tr>
+                                                <td class="text-muted">
+                                                    {{ "%.1f" | format(seg.start) }}s
+                                                </td>
+                                                <td>
+                                                    {% for emo in seg.top_emotions[:3] %}
+                                                    <span class="badge bg-{% if loop.index == 1 %}primary{% elif loop.index == 2 %}secondary{% else %}light text-dark{% endif %} me-1">
+                                                        {{ emo.emotion }} {{ "%.0f" | format(emo.score * 100) }}%
+                                                    </span>
+                                                    {% endfor %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                    {% else %}
+                                    <p class="text-muted">No timeline data available.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-secondary">
+                            <i class="fas fa-info-circle"></i> No emotion analysis available. Re-transcribe with emotions enabled.
                         </div>
                     {% endif %}
                 </div>
@@ -319,19 +616,170 @@
         </div>
     </div>
 
-    <!-- Video Description -->
+    <!-- Frame Analysis -->
+    {% if transcript_data.frame_analysis %}
     <div class="row">
         <div class="col-12 mb-4">
             <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Video Description</h5>
+                <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-images"></i> Frame Analysis</h5>
+                    <span class="badge bg-light text-dark">{{ transcript_data.frame_analysis|length }} frames</span>
                 </div>
-                <div class="card-body">
-                    <pre class="mb-0" style="white-space: pre-wrap;">{{ video.description }}</pre>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    <div class="row">
+                        {% for frame in transcript_data.frame_analysis %}
+                        <div class="col-md-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-header py-2">
+                                    <strong>{{ frame.timestamp }}s</strong>
+                                </div>
+                                <div class="card-body py-2">
+                                    <p class="card-text small mb-2">{{ frame.scene if frame.scene else 'No description' }}</p>
+                                    {% if frame.text_on_screen %}
+                                    <div class="small">
+                                        <strong class="text-warning">Text:</strong> {{ frame.text_on_screen }}
+                                    </div>
+                                    {% endif %}
+                                    {% if frame.objects %}
+                                    <div class="small mt-1">
+                                        <strong class="text-info">Objects:</strong> {{ frame.objects }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- AI Content Insights (Multimodal Analysis) -->
+    {% if transcript_data %}
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-lightbulb"></i> AI Content Insights</h5>
+                    <small class="opacity-75">Combined analysis of transcript, emotions, and visuals</small>
+                </div>
+                <div class="card-body">
+                    {% if transcript_data.content_insights %}
+                    {% set insights = transcript_data.content_insights %}
+
+                    {# Summary Row #}
+                    <div class="row mb-4">
+                        <div class="col-md-8">
+                            <h6><i class="fas fa-file-alt text-primary"></i> Content Summary</h6>
+                            <p class="mb-2">{{ insights.content_summary or 'Not available' }}</p>
+                            <p class="mb-0"><strong><i class="fas fa-bullseye"></i> Key Takeaway:</strong> {{ insights.key_takeaway or 'Not available' }}</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="card bg-light">
+                                <div class="card-body py-3">
+                                    <h6 class="text-muted mb-1">Engagement Score</h6>
+                                    <h2 class="mb-1 {% if insights.engagement_score >= 7 %}text-success{% elif insights.engagement_score >= 5 %}text-warning{% else %}text-danger{% endif %}">
+                                        {{ insights.engagement_score or 0 }}/10
+                                    </h2>
+                                    <small class="text-muted">{{ insights.content_type or 'Unknown' }} | {{ insights.predicted_audience or 'General' }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Emotional Arc & Visual Storytelling #}
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-heart text-danger"></i> Emotional Arc</h6>
+                            <p class="small">{{ insights.emotional_arc or 'Not analyzed' }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-film text-info"></i> Visual Storytelling</h6>
+                            <p class="small">{{ insights.visual_storytelling or 'Not analyzed' }}</p>
+                        </div>
+                    </div>
+
+                    {# Key Moments #}
+                    {% if insights.key_moments %}
+                    <div class="mb-4">
+                        <h6><i class="fas fa-star text-warning"></i> Key Moments</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 100px;">Time</th>
+                                        <th>What Happens</th>
+                                        <th>Why It Matters</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for moment in insights.key_moments[:5] %}
+                                    <tr>
+                                        <td><span class="badge bg-secondary">{{ moment.timestamp }}</span></td>
+                                        <td>{{ moment.description }}</td>
+                                        <td><em>{{ moment.significance }}</em></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {# Strengths, Engagement Factors, Improvements #}
+                    <div class="row">
+                        <div class="col-md-4">
+                            {% if insights.content_strengths %}
+                            <h6><i class="fas fa-check-circle text-success"></i> Strengths</h6>
+                            <ul class="small mb-0">
+                                {% for strength in insights.content_strengths %}
+                                <li>{{ strength }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            {% if insights.audience_engagement_factors %}
+                            <h6><i class="fas fa-users text-primary"></i> Engagement Factors</h6>
+                            <ul class="small mb-0">
+                                {% for factor in insights.audience_engagement_factors %}
+                                <li>{{ factor }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            {% if insights.improvement_opportunities %}
+                            <h6><i class="fas fa-arrow-up text-warning"></i> Improvement Opportunities</h6>
+                            <ul class="small mb-0">
+                                {% for opp in insights.improvement_opportunities %}
+                                <li>{{ opp }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    {# No content insights yet #}
+                    <div class="text-center py-4">
+                        <i class="fas fa-lightbulb text-muted" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-3 mb-0">No AI insights generated yet. Use "Transcribe & Analyze" with "Generate AI Content Insights" enabled.</p>
+                        <p class="small text-muted">
+                            Available data:
+                            {% if transcript_data.transcript %}<span class="badge bg-success me-1">Transcript</span>{% endif %}
+                            {% if transcript_data.emotions %}<span class="badge bg-info me-1">Emotions</span>{% endif %}
+                            {% if transcript_data.frame_analysis %}<span class="badge bg-warning me-1">Frames</span>{% endif %}
+                        </p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Back Button -->
     <div class="row">
@@ -343,9 +791,872 @@
     </div>
 </div>
 
-{% if is_analyzing %}
+<!-- Fixed Status Bar for Transcription Progress -->
+<div id="transcriptionStatusBar" class="fixed-bottom bg-dark text-white py-2 px-3 shadow-lg" style="display: none; z-index: 1050;">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-auto">
+                <span class="spinner-border spinner-border-sm text-success me-2" id="statusSpinner"></span>
+                <i class="fas fa-check-circle text-success me-2" id="statusCheck" style="display: none;"></i>
+                <i class="fas fa-times-circle text-danger me-2" id="statusError" style="display: none;"></i>
+            </div>
+            <div class="col">
+                <div class="d-flex align-items-center">
+                    <span id="statusText" class="me-3">Processing...</span>
+                    <div class="progress flex-grow-1" style="height: 8px; max-width: 300px;">
+                        <div class="progress-bar bg-success progress-bar-striped progress-bar-animated"
+                             id="statusProgressBar" style="width: 0%"></div>
+                    </div>
+                    <span class="ms-2 small" id="statusPercent">0%</span>
+                </div>
+                <div class="small text-muted mt-1" id="statusSteps">
+                    <span id="statusStep-download" class="me-2"><i class="fas fa-circle text-secondary"></i> Download</span>
+                    <span id="statusStep-frames" class="me-2" style="display: none;"><i class="fas fa-circle text-secondary"></i> Frames</span>
+                    <span id="statusStep-transcribe" class="me-2"><i class="fas fa-circle text-secondary"></i> Transcribe</span>
+                    <span id="statusStep-emotions" class="me-2" style="display: none;"><i class="fas fa-circle text-secondary"></i> Emotions</span>
+                    <span id="statusStep-insights" class="me-2" style="display: none;"><i class="fas fa-circle text-secondary"></i> Insights</span>
+                    <span id="statusStep-save" class="me-2"><i class="fas fa-circle text-secondary"></i> Save</span>
+                </div>
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-sm btn-outline-light" id="statusCloseBtn" style="display: none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Fixed Status Bar for Analysis Progress -->
+<div id="analysisStatusBar" class="fixed-bottom bg-primary text-white py-2 px-3 shadow-lg" style="display: none; z-index: 1051;">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-auto">
+                <span class="spinner-border spinner-border-sm text-light me-2" id="analysisSpinner"></span>
+                <i class="fas fa-check-circle text-light me-2" id="analysisCheck" style="display: none;"></i>
+                <i class="fas fa-times-circle text-warning me-2" id="analysisErrorIcon" style="display: none;"></i>
+            </div>
+            <div class="col">
+                <div class="d-flex align-items-center">
+                    <span id="analysisStatusText" class="me-3">Analyzing...</span>
+                    <div class="progress flex-grow-1 bg-white bg-opacity-25" style="height: 8px; max-width: 300px;">
+                        <div class="progress-bar bg-light progress-bar-striped progress-bar-animated"
+                             id="analysisProgressBar" style="width: 0%"></div>
+                    </div>
+                    <span class="ms-2 small" id="analysisPercent">0%</span>
+                </div>
+                <div class="small text-white-50 mt-1" id="analysisSteps">
+                    <span id="analysisStep-script" class="me-2"><i class="fas fa-circle"></i> Script</span>
+                    <span id="analysisStep-description" class="me-2"><i class="fas fa-circle"></i> Description</span>
+                    <span id="analysisStep-affiliate" class="me-2"><i class="fas fa-circle"></i> Affiliates</span>
+                    <span id="analysisStep-conversion" class="me-2"><i class="fas fa-circle"></i> Conversion</span>
+                </div>
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-sm btn-outline-light" id="analysisCloseBtn" style="display: none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Re-Analyze Confirmation Modal -->
+<div class="modal fade" id="reanalyzeModal" tabindex="-1" aria-labelledby="reanalyzeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="reanalyzeModalLabel">
+                    <i class="fas fa-brain me-2"></i>Confirm Re-Analysis
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <i class="fas fa-chart-line text-primary" style="font-size: 3rem;"></i>
+                </div>
+                <p class="text-center mb-3">Run AI analysis on this video?</p>
+
+                <div class="card bg-light mb-3">
+                    <div class="card-body py-2">
+                        <h6 class="card-title mb-2"><i class="fas fa-list-check text-success me-2"></i>This will analyze:</h6>
+                        <ul class="mb-0 small">
+                            <li>Script quality & persuasion techniques</li>
+                            <li>Description optimization & SEO</li>
+                            <li>Affiliate product recommendations</li>
+                            <li>Conversion drivers & insights</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="text-center">
+                    <div class="p-2 bg-info bg-opacity-10 rounded d-inline-block">
+                        <i class="fas fa-clock text-info me-2"></i>
+                        <span class="small text-muted">Estimated Time:</span>
+                        <strong>2-3 minutes</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Cancel
+                </button>
+                <button type="button" class="btn btn-primary" id="confirmReanalyzeBtn">
+                    <i class="fas fa-play me-1"></i>Start Analysis
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Transcribe & Analyze Modal -->
+<div class="modal fade" id="transcribeModal" tabindex="-1" aria-labelledby="transcribeModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="transcribeModalLabel">
+                    <i class="fas fa-microphone me-2"></i>Transcribe & Analyze Video
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="modalCloseBtn"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Configuration Form (shown initially) -->
+                <div id="configSection">
+                    {% if transcript_data %}
+                    <div class="alert alert-secondary mb-3 py-2">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Existing data:</strong>
+                        {% if transcript_data.transcript %}<span class="badge bg-success ms-1">Transcript</span>{% endif %}
+                        {% if transcript_data.emotions %}<span class="badge bg-info ms-1">Emotions</span>{% endif %}
+                        {% if transcript_data.frame_analysis %}<span class="badge bg-warning text-dark ms-1">Frames</span>{% endif %}
+                        {% if transcript_data.content_insights %}<span class="badge bg-primary ms-1">Insights</span>{% endif %}
+                    </div>
+                    {% endif %}
+
+                    <p class="text-muted mb-3">Select which data to generate (at least 1 required):</p>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableTranscript" {% if not transcript_data or not transcript_data.transcript %}checked{% endif %}>
+                            <label class="form-check-label" for="enableTranscript">
+                                <i class="fas fa-file-alt text-success me-1"></i> Generate Transcript
+                                {% if transcript_data and transcript_data.transcript %}
+                                <span class="badge bg-secondary ms-1">exists</span>
+                                {% endif %}
+                            </label>
+                        </div>
+                        <small class="text-muted ms-4">Download video and transcribe audio (Groq Whisper)</small>
+                    </div>
+
+                    <div id="transcriptOptions" class="ms-4 mb-3" style="display: none;">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="storeSegments" checked>
+                            <label class="form-check-label small" for="storeSegments">
+                                <i class="fas fa-clock text-secondary me-1"></i> Store segments with timestamps
+                            </label>
+                        </div>
+                        <small class="text-muted ms-4">Enables viewing transcript with timestamps</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableEmotions">
+                            <label class="form-check-label" for="enableEmotions">
+                                <i class="fas fa-smile text-info me-1"></i> Voice Emotion Analysis (Hume AI)
+                                {% if transcript_data and transcript_data.emotions %}
+                                <span class="badge bg-secondary ms-1">exists</span>
+                                {% endif %}
+                            </label>
+                        </div>
+                        <small class="text-muted ms-4">Analyze voice prosody to detect emotions in speech</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableFrames">
+                            <label class="form-check-label" for="enableFrames">
+                                <i class="fas fa-images text-warning me-1"></i> Frame Analysis (Vision AI)
+                                {% if transcript_data and transcript_data.frame_analysis %}
+                                <span class="badge bg-secondary ms-1">exists</span>
+                                {% endif %}
+                            </label>
+                        </div>
+                        <small class="text-muted ms-4">Extract and analyze video frames with AI vision</small>
+                    </div>
+
+                    <div id="frameOptions" class="ms-4 mb-3" style="display: none;">
+                        <label for="frameInterval" class="form-label">Frame Interval (seconds)</label>
+                        <input type="number" class="form-control" id="frameInterval" value="10" min="1" max="300" step="1">
+                        <div class="invalid-feedback" id="frameIntervalError">Please enter a value between 1 and 300 seconds.</div>
+                        <small class="text-muted">Lower intervals = more frames = longer processing time (1-300 seconds)</small>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableInsights" {% if not transcript_data or not transcript_data.content_insights %}checked{% endif %}>
+                            <label class="form-check-label" for="enableInsights">
+                                <i class="fas fa-lightbulb text-primary me-1"></i> Generate AI Content Insights
+                                {% if transcript_data and transcript_data.content_insights %}
+                                <span class="badge bg-secondary ms-1">exists</span>
+                                {% endif %}
+                            </label>
+                        </div>
+                        <small class="text-muted ms-4">Combine transcript + emotions + frames for comprehensive analysis</small>
+                        <div class="small text-info ms-4 mt-1" id="insightsDataSource">
+                            <i class="fas fa-info-circle me-1"></i> Will use: <span id="insightsSourceList">new transcript</span>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        <strong>Estimated time:</strong>
+                        <span id="estimatedTime">2-3 minutes</span>
+                    </div>
+                </div>
+
+                <!-- Progress Section (shown during processing) -->
+                <div id="progressSection" style="display: none;">
+                    <div class="text-center mb-3">
+                        <div class="spinner-border text-success" role="status" style="width: 3rem; height: 3rem;">
+                            <span class="visually-hidden">Processing...</span>
+                        </div>
+                    </div>
+
+                    <h6 class="text-center mb-3" id="progressTitle">Starting...</h6>
+
+                    <div class="progress mb-3" style="height: 25px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                             role="progressbar" id="progressBar" style="width: 0%">0%</div>
+                    </div>
+
+                    <div id="progressSteps" class="small">
+                        <div class="d-flex align-items-center mb-2" id="step-download">
+                            <i class="fas fa-circle text-secondary me-2" id="icon-download"></i>
+                            <span>Downloading video/audio...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2" id="step-frames" style="display: none;">
+                            <i class="fas fa-circle text-secondary me-2" id="icon-frames"></i>
+                            <span>Extracting and analyzing frames...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2" id="step-transcribe">
+                            <i class="fas fa-circle text-secondary me-2" id="icon-transcribe"></i>
+                            <span>Transcribing audio (Groq Whisper)...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2" id="step-emotions" style="display: none;">
+                            <i class="fas fa-circle text-secondary me-2" id="icon-emotions"></i>
+                            <span>Analyzing voice emotions (Hume AI)...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2" id="step-save">
+                            <i class="fas fa-circle text-secondary me-2" id="icon-save"></i>
+                            <span>Saving results...</span>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning small mt-3">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        Please don't close this window while processing.
+                    </div>
+                </div>
+
+                <!-- Completion Section (shown when done) -->
+                <div id="completionSection" style="display: none;">
+                    <div class="text-center">
+                        <i class="fas fa-check-circle text-success" style="font-size: 4rem;"></i>
+                        <h5 class="mt-3">Analysis Complete!</h5>
+                        <p class="text-muted">The page will refresh to show the results.</p>
+                    </div>
+                </div>
+
+                <!-- Error Section -->
+                <div id="errorSection" style="display: none;">
+                    <div class="text-center">
+                        <i class="fas fa-times-circle text-danger" style="font-size: 4rem;"></i>
+                        <h5 class="mt-3">Analysis Failed</h5>
+                        <p class="text-muted" id="errorMessage">An error occurred during processing.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="cancelBtn">Cancel</button>
+                <button type="button" class="btn btn-success" id="startAnalysisBtn">
+                    <i class="fas fa-play me-1"></i> Start
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-    // Auto-refresh page every 10 seconds when analysis is in progress
+document.addEventListener('DOMContentLoaded', function() {
+    const videoId = '{{ video.video_id }}';
+    const hasExistingTranscript = {{ 'true' if transcript_data and transcript_data.transcript else 'false' }};
+    const hasExistingEmotions = {{ 'true' if transcript_data and transcript_data.emotions else 'false' }};
+    const hasExistingFrames = {{ 'true' if transcript_data and transcript_data.frame_analysis else 'false' }};
+
+    // Elements
+    const enableTranscript = document.getElementById('enableTranscript');
+    const enableFrames = document.getElementById('enableFrames');
+    const enableEmotions = document.getElementById('enableEmotions');
+    const enableInsights = document.getElementById('enableInsights');
+    const frameOptions = document.getElementById('frameOptions');
+    const transcriptOptions = document.getElementById('transcriptOptions');
+    const storeSegments = document.getElementById('storeSegments');
+    const frameInterval = document.getElementById('frameInterval');
+    const estimatedTime = document.getElementById('estimatedTime');
+    const startBtn = document.getElementById('startAnalysisBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const modalCloseBtn = document.getElementById('modalCloseBtn');
+    const insightsSourceList = document.getElementById('insightsSourceList');
+
+    const configSection = document.getElementById('configSection');
+    const progressSection = document.getElementById('progressSection');
+    const completionSection = document.getElementById('completionSection');
+    const errorSection = document.getElementById('errorSection');
+    const modalFooter = document.getElementById('modalFooter');
+
+    // Update insights data source display
+    function updateInsightsSource() {
+        if (!enableInsights || !enableInsights.checked) {
+            document.getElementById('insightsDataSource').style.display = 'none';
+            return;
+        }
+        document.getElementById('insightsDataSource').style.display = 'block';
+
+        const sources = [];
+        // Transcript
+        if (enableTranscript && enableTranscript.checked) {
+            sources.push('new transcript');
+        } else if (hasExistingTranscript) {
+            sources.push('existing transcript');
+        }
+        // Emotions
+        if (enableEmotions && enableEmotions.checked) {
+            sources.push('new emotions');
+        } else if (hasExistingEmotions) {
+            sources.push('existing emotions');
+        }
+        // Frames
+        if (enableFrames && enableFrames.checked) {
+            sources.push('new frames');
+        } else if (hasExistingFrames) {
+            sources.push('existing frames');
+        }
+
+        insightsSourceList.textContent = sources.length > 0 ? sources.join(' + ') : 'no data available';
+    }
+
+    // Validate at least one option is selected and data is available
+    function validateSelection() {
+        const transcriptSelected = enableTranscript && enableTranscript.checked;
+        const emotionsSelected = enableEmotions && enableEmotions.checked;
+        const framesSelected = enableFrames && enableFrames.checked;
+        const insightsSelected = enableInsights && enableInsights.checked;
+
+        const anySelected = transcriptSelected || emotionsSelected || framesSelected || insightsSelected;
+
+        // Check if only insights is selected with no data available
+        const onlyInsightsSelected = insightsSelected && !transcriptSelected && !emotionsSelected && !framesSelected;
+        const noDataAvailable = insightsSourceList.textContent === 'no data available';
+
+        // Disable if nothing selected OR if only insights selected with no data
+        const shouldDisable = !anySelected || (onlyInsightsSelected && noDataAvailable);
+        startBtn.disabled = shouldDisable;
+        return !shouldDisable;  // Return true if selection is valid
+    }
+
+    // Show/hide frame options
+    enableFrames.addEventListener('change', function() {
+        frameOptions.style.display = this.checked ? 'block' : 'none';
+        document.getElementById('step-frames').style.display = this.checked ? 'flex' : 'none';
+        updateEstimatedTime();
+        updateInsightsSource();
+        validateSelection();
+    });
+
+    enableEmotions.addEventListener('change', function() {
+        document.getElementById('step-emotions').style.display = this.checked ? 'flex' : 'none';
+        updateEstimatedTime();
+        updateInsightsSource();
+        validateSelection();
+    });
+
+    enableTranscript.addEventListener('change', function() {
+        document.getElementById('step-download').style.display = this.checked ? 'inline' : 'none';
+        document.getElementById('step-transcribe').style.display = this.checked ? 'inline' : 'none';
+        transcriptOptions.style.display = this.checked ? 'block' : 'none';
+        updateEstimatedTime();
+        updateInsightsSource();
+        validateSelection();
+    });
+
+    enableInsights.addEventListener('change', function() {
+        updateInsightsSource();
+        validateSelection();
+    });
+
+    frameInterval.addEventListener('input', updateEstimatedTime);
+    frameInterval.addEventListener('input', validateFrameInterval);
+
+    // Initialize
+    updateInsightsSource();
+    validateSelection();
+    updateEstimatedTime();
+    // Initialize step visibility based on default checkbox states
+    document.getElementById('step-download').style.display = enableTranscript.checked ? 'inline' : 'none';
+    document.getElementById('step-transcribe').style.display = enableTranscript.checked ? 'inline' : 'none';
+    transcriptOptions.style.display = enableTranscript.checked ? 'block' : 'none';
+
+    function validateFrameInterval() {
+        const value = parseInt(frameInterval.value);
+        const isValid = !isNaN(value) && value >= 1 && value <= 300;
+
+        if (isValid) {
+            frameInterval.classList.remove('is-invalid');
+            frameInterval.classList.add('is-valid');
+        } else {
+            frameInterval.classList.remove('is-valid');
+            frameInterval.classList.add('is-invalid');
+        }
+
+        return isValid;
+    }
+
+    function updateEstimatedTime() {
+        let time = 0;
+        let features = [];
+
+        if (enableTranscript && enableTranscript.checked) {
+            time += 2; // Base transcription time
+            features.push('transcript');
+        }
+        if (enableEmotions && enableEmotions.checked) {
+            time += 1;
+            features.push('emotions');
+        }
+        if (enableFrames && enableFrames.checked) {
+            const interval = parseInt(frameInterval.value) || 10;
+            if (interval <= 5) time += 5;
+            else if (interval <= 10) time += 3;
+            else if (interval <= 30) time += 2;
+            else time += 1;
+            features.push('frames');
+        }
+        if (enableInsights && enableInsights.checked) {
+            time += 0.5; // Insights generation is quick
+            features.push('insights');
+        }
+
+        if (features.length === 0) {
+            estimatedTime.textContent = 'Select at least one option';
+        } else {
+            estimatedTime.textContent = `${Math.max(1, time)}-${time+2} minutes (${features.join(' + ')})`;
+        }
+    }
+
+    // Delete existing transcript
+    const deleteBtn = document.getElementById('deleteTranscriptBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            if (!confirm('Are you sure you want to delete the existing transcript? This cannot be undone.')) {
+                return;
+            }
+
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Deleting...';
+
+            fetch(`/api/v1/transcript/${videoId}`, { method: 'DELETE' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'deleted') {
+                    location.reload();
+                } else {
+                    alert('Failed to delete transcript: ' + (data.error || 'Unknown error'));
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-trash me-1"></i> Delete & Re-transcribe';
+                }
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-trash me-1"></i> Delete & Re-transcribe';
+            });
+        });
+    }
+
+    // Status bar elements
+    const statusBar = document.getElementById('transcriptionStatusBar');
+    const statusSpinner = document.getElementById('statusSpinner');
+    const statusCheck = document.getElementById('statusCheck');
+    const statusErrorIcon = document.getElementById('statusError');
+    const statusText = document.getElementById('statusText');
+    const statusProgressBar = document.getElementById('statusProgressBar');
+    const statusPercent = document.getElementById('statusPercent');
+    const statusCloseBtn = document.getElementById('statusCloseBtn');
+
+    // Close status bar button
+    statusCloseBtn.addEventListener('click', function() {
+        statusBar.style.display = 'none';
+    });
+
+    // Start analysis
+    startBtn.addEventListener('click', function() {
+        // Validate at least one option
+        if (!validateSelection()) {
+            alert('Please select at least one option.');
+            return;
+        }
+
+        // Validate frame interval if frames are enabled
+        if (enableFrames.checked && !validateFrameInterval()) {
+            frameInterval.focus();
+            return;
+        }
+
+        const withTranscript = enableTranscript && enableTranscript.checked;
+        const withEmotions = enableEmotions && enableEmotions.checked;
+        const withFrames = enableFrames && enableFrames.checked;
+        const withInsights = enableInsights && enableInsights.checked;
+
+        // Close modal and show status bar
+        const modal = bootstrap.Modal.getInstance(document.getElementById('transcribeModal'));
+        modal.hide();
+
+        // Show status bar with correct steps
+        statusBar.style.display = 'block';
+        statusSpinner.style.display = 'inline-block';
+        statusCheck.style.display = 'none';
+        statusErrorIcon.style.display = 'none';
+        statusCloseBtn.style.display = 'none';
+        statusText.textContent = 'Starting...';
+        statusProgressBar.style.width = '0%';
+        statusPercent.textContent = '0%';
+
+        // Show/hide relevant steps in status bar
+        const needsDownload = withTranscript || withEmotions || withFrames;
+        document.getElementById('statusStep-download').style.display = needsDownload ? 'inline' : 'none';
+        document.getElementById('statusStep-transcribe').style.display = withTranscript ? 'inline' : 'none';
+        document.getElementById('statusStep-frames').style.display = withFrames ? 'inline' : 'none';
+        document.getElementById('statusStep-emotions').style.display = withEmotions ? 'inline' : 'none';
+        document.getElementById('statusStep-insights').style.display = withInsights ? 'inline' : 'none';
+
+        // Disable the transcribe button
+        document.querySelector('[data-bs-target="#transcribeModal"]').disabled = true;
+
+        // Prepare options
+        const options = {
+            video_id: videoId,
+            generate_transcript: withTranscript,
+            analyze_emotions: withEmotions,
+            analyze_frames: withFrames,
+            generate_insights: withInsights
+        };
+
+        if (withTranscript && storeSegments && storeSegments.checked) {
+            options.store_segments = true;
+        }
+
+        if (withFrames) {
+            options.frame_interval = parseInt(frameInterval.value) || 10;
+        }
+
+        // Start the transcription
+        fetch('/api/v1/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(options)
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'started') {
+                // Start polling for progress
+                pollStatusBar(withTranscript, withEmotions, withFrames, withInsights);
+            } else if (data.status === 'completed') {
+                // Insights-only completed immediately
+                showStatusCompletion('Complete! Refreshing page...');
+                setTimeout(() => location.reload(), 1500);
+            } else if (data.status === 'exists') {
+                showStatusCompletion('Transcript already exists! Refreshing...');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showStatusError(data.error || 'Unknown error');
+            }
+        })
+        .catch(err => {
+            showStatusError(err.message || 'Failed to start analysis');
+        });
+    });
+
+    function pollStatusBar(withTranscript, withEmotions, withFrames, withInsights) {
+        const checkStatus = () => {
+            fetch(`/api/v1/transcribe/status/${videoId}`)
+            .then(response => response.json())
+            .then(data => {
+                updateStatusBar(data, withTranscript, withEmotions, withFrames, withInsights);
+
+                if (data.status === 'completed') {
+                    showStatusCompletion('Complete! Refreshing page...');
+                    setTimeout(() => location.reload(), 1500);
+                } else if (data.status === 'error') {
+                    showStatusError(data.error || 'Analysis failed');
+                } else if (data.status === 'processing' || data.status === 'started') {
+                    // Continue polling
+                    setTimeout(checkStatus, 2000);
+                } else {
+                    // Not found or done - check if transcript exists
+                    fetch(`/api/v1/transcript/${videoId}`)
+                    .then(r => r.json())
+                    .then(t => {
+                        if (t.exists) {
+                            showStatusCompletion('Complete! Refreshing page...');
+                            setTimeout(() => location.reload(), 1500);
+                        } else if (t.is_transcribing) {
+                            setTimeout(checkStatus, 2000);
+                        } else {
+                            showStatusError('Processing stopped unexpectedly');
+                        }
+                    });
+                }
+            })
+            .catch(() => {
+                // On error, wait and retry
+                setTimeout(checkStatus, 3000);
+            });
+        };
+
+        setTimeout(checkStatus, 2000);
+    }
+
+    function updateStatusBar(data, withTranscript, withEmotions, withFrames, withInsights) {
+        const step = data.step || 'download';
+        const progress = data.progress || 0;
+        const message = data.message || 'Processing...';
+
+        // Update progress bar and text
+        statusProgressBar.style.width = progress + '%';
+        statusPercent.textContent = progress + '%';
+        statusText.textContent = message;
+
+        // Build step list based on enabled options
+        const steps = [];
+        const needsDownload = withTranscript || withEmotions || withFrames;
+        if (needsDownload) steps.push('download');
+        if (withFrames) steps.push('frames');
+        if (withTranscript) steps.push('transcribe');
+        if (withEmotions) steps.push('emotions');
+        if (withInsights) steps.push('insights');
+        steps.push('save');
+
+        const currentIdx = steps.indexOf(step);
+        steps.forEach((s, idx) => {
+            const stepEl = document.getElementById('statusStep-' + s);
+            if (stepEl) {
+                const icon = stepEl.querySelector('i');
+                if (idx < currentIdx) {
+                    icon.className = 'fas fa-check-circle text-success';
+                } else if (idx === currentIdx) {
+                    icon.className = 'fas fa-spinner fa-spin text-info';
+                } else {
+                    icon.className = 'fas fa-circle text-secondary';
+                }
+            }
+        });
+    }
+
+    function showStatusCompletion(message) {
+        statusSpinner.style.display = 'none';
+        statusCheck.style.display = 'inline-block';
+        statusErrorIcon.style.display = 'none';
+        statusText.textContent = message || 'Complete!';
+        statusProgressBar.style.width = '100%';
+        statusPercent.textContent = '100%';
+        statusProgressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+    }
+
+    function showStatusError(message) {
+        statusSpinner.style.display = 'none';
+        statusCheck.style.display = 'none';
+        statusErrorIcon.style.display = 'inline-block';
+        statusText.textContent = message || 'Error occurred';
+        statusCloseBtn.style.display = 'inline-block';
+        document.querySelector('[data-bs-target="#transcribeModal"]').disabled = false;
+    }
+
+    // ==================== RE-ANALYZE BUTTON ====================
+    const reanalyzeBtn = document.getElementById('reanalyzeBtn');
+    const analysisStatusBar = document.getElementById('analysisStatusBar');
+    const analysisSpinner = document.getElementById('analysisSpinner');
+    const analysisCheck = document.getElementById('analysisCheck');
+    const analysisErrorIcon = document.getElementById('analysisErrorIcon');
+    const analysisStatusText = document.getElementById('analysisStatusText');
+    const analysisProgressBar = document.getElementById('analysisProgressBar');
+    const analysisPercent = document.getElementById('analysisPercent');
+    const analysisCloseBtn = document.getElementById('analysisCloseBtn');
+
+    // Close analysis status bar
+    analysisCloseBtn.addEventListener('click', function() {
+        analysisStatusBar.style.display = 'none';
+    });
+
+    // Re-analyze modal confirm button click
+    const confirmReanalyzeBtn = document.getElementById('confirmReanalyzeBtn');
+    confirmReanalyzeBtn.addEventListener('click', function() {
+        // Close the modal
+        const reanalyzeModal = bootstrap.Modal.getInstance(document.getElementById('reanalyzeModal'));
+        reanalyzeModal.hide();
+
+        // Disable the re-analyze button
+        reanalyzeBtn.disabled = true;
+
+        // Show analysis status bar
+        analysisStatusBar.style.display = 'block';
+        analysisSpinner.style.display = 'inline-block';
+        analysisCheck.style.display = 'none';
+        analysisErrorIcon.style.display = 'none';
+        analysisCloseBtn.style.display = 'none';
+        analysisStatusText.textContent = 'Starting analysis...';
+        analysisProgressBar.style.width = '0%';
+        analysisPercent.textContent = '0%';
+
+        // Reset step icons
+        ['script', 'description', 'affiliate', 'conversion'].forEach(s => {
+            const stepEl = document.getElementById('analysisStep-' + s);
+            if (stepEl) {
+                stepEl.querySelector('i').className = 'fas fa-circle';
+            }
+        });
+
+        // Disable button
+        reanalyzeBtn.disabled = true;
+
+        // Start analysis
+        fetch('/api/v1/analysis/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                video_id: videoId,
+                analysis_types: ['script', 'description', 'affiliate', 'conversion']
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'started' || data.status === 'already_running') {
+                pollAnalysisStatus();
+            } else if (data.error) {
+                showAnalysisError(data.error);
+            } else {
+                showAnalysisError('Unknown error');
+            }
+        })
+        .catch(err => {
+            showAnalysisError(err.message || 'Failed to start analysis');
+        });
+    });
+
+    function pollAnalysisStatus() {
+        const checkStatus = () => {
+            fetch(`/api/v1/analysis/status/${videoId}`)
+            .then(response => response.json())
+            .then(data => {
+                updateAnalysisStatusBar(data);
+
+                if (data.status === 'error') {
+                    showAnalysisError(data.error || 'Analysis failed');
+                } else if (data.status === 'not_running') {
+                    // Analysis finished - refresh page
+                    showAnalysisCompletion('Complete! Refreshing page...');
+                    setTimeout(() => location.reload(), 1500);
+                } else if (data.status === 'processing') {
+                    setTimeout(checkStatus, 2000);
+                } else {
+                    setTimeout(checkStatus, 2000);
+                }
+            })
+            .catch(() => {
+                setTimeout(checkStatus, 3000);
+            });
+        };
+
+        setTimeout(checkStatus, 1000);
+    }
+
+    function updateAnalysisStatusBar(data) {
+        const step = data.step || 'starting';
+        const progress = data.progress || 0;
+        const message = data.message || 'Analyzing...';
+
+        analysisProgressBar.style.width = progress + '%';
+        analysisPercent.textContent = progress + '%';
+        analysisStatusText.textContent = message;
+
+        const steps = ['script', 'description', 'affiliate', 'conversion'];
+        const stepMap = {
+            'starting': -1, 'fetching': -1,
+            'script': 0, 'description': 1, 'affiliate': 2, 'conversion': 3,
+            'saving': 4, 'completed': 5
+        };
+
+        const currentIdx = stepMap[step] !== undefined ? stepMap[step] : -1;
+        steps.forEach((s, idx) => {
+            const stepEl = document.getElementById('analysisStep-' + s);
+            if (stepEl) {
+                const icon = stepEl.querySelector('i');
+                if (idx < currentIdx) {
+                    icon.className = 'fas fa-check-circle text-white';
+                } else if (idx === currentIdx) {
+                    icon.className = 'fas fa-spinner fa-spin text-white';
+                } else {
+                    icon.className = 'fas fa-circle text-white-50';
+                }
+            }
+        });
+    }
+
+    function showAnalysisCompletion(message) {
+        analysisSpinner.style.display = 'none';
+        analysisCheck.style.display = 'inline-block';
+        analysisErrorIcon.style.display = 'none';
+        analysisStatusText.textContent = message || 'Complete!';
+        analysisProgressBar.style.width = '100%';
+        analysisPercent.textContent = '100%';
+        analysisProgressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+    }
+
+    function showAnalysisError(message) {
+        analysisSpinner.style.display = 'none';
+        analysisCheck.style.display = 'none';
+        analysisErrorIcon.style.display = 'inline-block';
+        analysisStatusText.textContent = message || 'Error occurred';
+        analysisCloseBtn.style.display = 'inline-block';
+        reanalyzeBtn.disabled = false;
+    }
+
+    // Reset modal on close
+    document.getElementById('transcribeModal').addEventListener('hidden.bs.modal', function() {
+        configSection.style.display = 'block';
+        progressSection.style.display = 'none';
+        completionSection.style.display = 'none';
+        errorSection.style.display = 'none';
+        modalFooter.style.display = 'block';
+        modalCloseBtn.style.display = 'block';
+        startBtn.style.display = 'inline-block';
+        cancelBtn.textContent = 'Cancel';
+    });
+
+});
+</script>
+
+{% if is_transcribing %}
+<script>
+    // Auto-refresh page every 10 seconds when transcription is in progress
     setTimeout(function() {
         location.reload();
     }, 10000);

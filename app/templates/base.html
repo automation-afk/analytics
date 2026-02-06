@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}YouTube Analytics Dashboard{% endblock %}</title>
 
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23dc3545'/><path d='M30 70 L30 40 L45 55 L60 35 L75 50 L75 70 Z' fill='white' opacity='0.9'/><circle cx='30' cy='40' r='5' fill='white'/><circle cx='45' cy='55' r='5' fill='white'/><circle cx='60' cy='35' r='5' fill='white'/><circle cx='75' cy='50' r='5' fill='white'/></svg>">
+
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
@@ -56,9 +59,9 @@
                     <button id="darkModeToggle" class="btn btn-outline-light btn-sm" title="Toggle Dark Mode">
                         <i id="darkModeIcon" class="fas fa-moon"></i>
                     </button>
-                    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm" title="Logout">
+                    <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#logoutModal" title="Logout">
                         <i class="fas fa-sign-out-alt me-1"></i>Logout
-                    </a>
+                    </button>
                 </div>
             </div>
         </div>
@@ -90,27 +93,59 @@
         </div>
     </footer>
 
-    <!-- Analysis Progress Modal -->
-    <div class="modal fade" id="analysisProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <!-- Logout Confirmation Modal -->
+    <div class="modal fade" id="logoutModal" tabindex="-1" aria-labelledby="logoutModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title" id="logoutModalLabel">
+                        <i class="fas fa-sign-out-alt me-2"></i>Confirm Logout
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="fas fa-user-circle text-secondary mb-3" style="font-size: 3rem;"></i>
+                    <p class="mb-0">Are you sure you want to logout?</p>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Cancel
+                    </button>
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-danger">
+                        <i class="fas fa-sign-out-alt me-1"></i>Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Task Progress Modal (Analysis & Transcription) -->
+    <div class="modal fade" id="analysisProgressModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title">
                         <i class="fas fa-cog fa-spin me-2"></i>
-                        <span id="modalTitle">Analysis in Progress</span>
+                        <span id="modalTitle">Processing in Progress</span>
                     </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body text-center py-4">
-                    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
-                        <span class="visually-hidden">Analyzing...</span>
+                    <!-- Progress bar -->
+                    <div class="progress mb-3" style="height: 20px;">
+                        <div id="modalProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%">0%</div>
                     </div>
-                    <p class="mb-2"><strong id="modalVideoTitle">Analyzing video...</strong></p>
-                    <p class="text-muted mb-0">This takes approximately 2-3 minutes</p>
+                    <p class="mb-2"><strong id="modalVideoTitle">Processing video...</strong></p>
+                    <p class="text-muted mb-0" id="modalMessage">This takes approximately 2-3 minutes</p>
                     <p class="text-muted small">You can navigate to other pages while this runs</p>
                 </div>
-                <div class="modal-footer">
-                    <small class="text-muted w-100 text-center">
-                        The page will update automatically when complete
+                <div class="modal-footer justify-content-between">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Dismiss
+                    </button>
+                    <small class="text-muted">
+                        Processing continues in background
                     </small>
                 </div>
             </div>
@@ -123,61 +158,105 @@
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
-    <!-- Analysis Progress Checker -->
+    <!-- Background Task Progress Checker (Analysis & Transcription) -->
     <script>
-        // Check for running analyses every 5 seconds
-        let analysisModal = null;
-        let analysisCheckInterval = null;
+        // Check for running tasks every 3 seconds
+        let taskModal = null;
+        let taskCheckInterval = null;
         let modalEl = null;
+        let userDismissedModal = false;  // Track if user manually dismissed
+        let currentTaskType = null;  // 'analysis' or 'transcription'
+        let currentVideoId = null;
 
-        function checkAnalysisStatus() {
-            fetch('/api/v1/analysis/status')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.is_analyzing && data.videos_analyzing.length > 0) {
-                        // Analysis is running
-                        const video = data.videos_analyzing[0];
+        function updateModalProgress(progress, message, title, taskType) {
+            if (!modalEl) {
+                modalEl = document.getElementById('analysisProgressModal');
+                taskModal = new bootstrap.Modal(modalEl);
 
-                        // Initialize modal if needed
-                        if (!modalEl) {
-                            modalEl = document.getElementById('analysisProgressModal');
-                            analysisModal = new bootstrap.Modal(modalEl, {
-                                backdrop: 'static',
-                                keyboard: false
-                            });
-                        }
+                // Listen for manual dismiss
+                modalEl.addEventListener('hidden.bs.modal', function() {
+                    userDismissedModal = true;
+                });
+            }
 
-                        // Update modal content
-                        document.getElementById('modalVideoTitle').textContent =
-                            `Analyzing: ${video.title.substring(0, 50)}${video.title.length > 50 ? '...' : ''}`;
+            // Update modal content
+            const progressBar = document.getElementById('modalProgressBar');
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${progress}%`;
 
-                        // Check if modal is actually visible in DOM (has 'show' class)
-                        const isCurrentlyVisible = modalEl.classList.contains('show');
+            document.getElementById('modalVideoTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
 
-                        // Only show if not already visible
-                        if (!isCurrentlyVisible) {
-                            analysisModal.show();
-                        }
-                    } else {
-                        // No analysis running - hide modal if visible
-                        if (modalEl && modalEl.classList.contains('show')) {
-                            analysisModal.hide();
-                        }
+            // Update header based on task type
+            const modalTitle = document.getElementById('modalTitle');
+            if (taskType === 'transcription') {
+                modalTitle.innerHTML = '<i class="fas fa-microphone-alt me-2"></i>Transcription in Progress';
+            } else {
+                modalTitle.innerHTML = '<i class="fas fa-brain me-2"></i>Analysis in Progress';
+            }
+        }
+
+        function checkBackgroundTaskStatus() {
+            // Check both analysis and transcription status in parallel
+            Promise.all([
+                fetch('/api/v1/analysis/status').then(r => r.json()).catch(() => ({ is_analyzing: false, videos_analyzing: [] })),
+                fetch('/api/v1/transcribe/status').then(r => r.json()).catch(() => ({ is_transcribing: false, videos_transcribing: [] }))
+            ]).then(([analysisData, transcribeData]) => {
+                let hasRunningTask = false;
+                let taskInfo = null;
+                let taskType = null;
+
+                // Prioritize transcription (more frequent updates)
+                if (transcribeData.is_transcribing && transcribeData.videos_transcribing.length > 0) {
+                    hasRunningTask = true;
+                    taskInfo = transcribeData.videos_transcribing[0];
+                    taskType = 'transcription';
+                } else if (analysisData.is_analyzing && analysisData.videos_analyzing.length > 0) {
+                    hasRunningTask = true;
+                    taskInfo = analysisData.videos_analyzing[0];
+                    taskType = 'analysis';
+                }
+
+                if (hasRunningTask && taskInfo) {
+                    currentTaskType = taskType;
+                    currentVideoId = taskInfo.video_id;
+
+                    const title = taskInfo.title ?
+                        `${taskType === 'transcription' ? 'Transcribing' : 'Analyzing'}: ${taskInfo.title.substring(0, 45)}${taskInfo.title.length > 45 ? '...' : ''}` :
+                        `${taskType === 'transcription' ? 'Transcribing' : 'Analyzing'} video...`;
+
+                    const progress = taskInfo.progress || 0;
+                    const message = taskInfo.message || 'Processing...';
+
+                    updateModalProgress(progress, message, title, taskType);
+
+                    // Only show if not manually dismissed and not already visible
+                    const isCurrentlyVisible = modalEl && modalEl.classList.contains('show');
+                    if (!isCurrentlyVisible && !userDismissedModal) {
+                        taskModal.show();
                     }
-                })
-                .catch(error => console.error('Error checking analysis status:', error));
+                } else {
+                    // No tasks running - hide modal if visible and reset dismiss flag
+                    userDismissedModal = false;
+                    currentTaskType = null;
+                    currentVideoId = null;
+                    if (modalEl && modalEl.classList.contains('show')) {
+                        taskModal.hide();
+                    }
+                }
+            }).catch(error => console.error('Error checking task status:', error));
         }
 
         // Start checking when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            checkAnalysisStatus();  // Check immediately
-            analysisCheckInterval = setInterval(checkAnalysisStatus, 5000);  // Then every 5 seconds
+            checkBackgroundTaskStatus();  // Check immediately
+            taskCheckInterval = setInterval(checkBackgroundTaskStatus, 3000);  // Then every 3 seconds
         });
 
         // Clean up interval when page unloads
         window.addEventListener('beforeunload', function() {
-            if (analysisCheckInterval) {
-                clearInterval(analysisCheckInterval);
+            if (taskCheckInterval) {
+                clearInterval(taskCheckInterval);
             }
         });
     </script>

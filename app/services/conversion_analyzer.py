@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class ConversionAnalyzer:
     """Analyze conversion performance using Claude AI."""
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
         """Initialize conversion analyzer with Claude API."""
         self.client = Anthropic(api_key=api_key)
         self.model = model
@@ -52,10 +52,13 @@ class ConversionAnalyzer:
             click_through_rate = (clicks / views * 100) if views > 0 else 0.0
 
             # Build context for Claude
+            desc_text = (description[:300] + '...') if description else 'No description available'
+            transcript_text = (transcript[:2000] + '...') if transcript else 'No transcript available'
+
             context = f"""
-Video Title: {title}
-Description: {description[:300]}...
-Transcript: {transcript[:2000]}...
+Video Title: {title or 'Unknown'}
+Description: {desc_text}
+Transcript: {transcript_text}
 
 Performance Metrics:
 - Total Revenue: ${revenue:,.2f}
@@ -129,12 +132,24 @@ Focus on:
             logger.info(f"Conversion analysis completed successfully")
             return result
 
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error in conversion analysis: {str(e)}")
+            logger.error(f"Raw response: {result_text[:500] if 'result_text' in dir() else 'N/A'}")
+            return {
+                "conversion_drivers": ["Analysis completed but response parsing failed"],
+                "underperformance_reasons": [],
+                "recommendations": ["Try re-analyzing the video"],
+                "performance_assessment": "unknown",
+                "key_insight": "Response parsing error - the AI response was not valid JSON"
+            }
         except Exception as e:
             logger.error(f"Error in conversion analysis: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {
-                "conversion_drivers": ["Analysis error - please retry"],
+                "conversion_drivers": [f"Analysis error: {str(e)[:100]}"],
                 "underperformance_reasons": [],
-                "recommendations": [],
+                "recommendations": ["Check the logs for more details", "Try re-analyzing the video"],
                 "performance_assessment": "unknown",
-                "key_insight": f"Analysis failed: {str(e)}"
+                "key_insight": f"Analysis failed - see logs for details"
             }

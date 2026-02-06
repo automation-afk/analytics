@@ -43,18 +43,45 @@ class DescriptionAnalyzer:
             self.client = None
             logger.info("Description analyzer initialized (basic analysis only)")
 
-    def analyze(self, description: str, title: str = "") -> Dict:
+    def analyze(self, description: str, title: str = "", yt_analytics: Dict = None) -> Dict:
         """
         Comprehensive description analysis.
 
         Args:
             description: Video description text
             title: Video title (optional, for context)
+            yt_analytics: YT Analytics data from BigQuery (optional)
 
         Returns:
             Dictionary with analysis results
         """
         logger.info("Analyzing video description...")
+
+        # Handle None or empty description
+        if not description:
+            logger.warning("No description provided for analysis")
+            return {
+                'description_length': 0,
+                'word_count': 0,
+                'line_count': 0,
+                'total_links': 0,
+                'links': [],
+                'link_density': 0,
+                'link_positioning_score': 0,
+                'has_clear_cta': False,
+                'cta_count': 0,
+                'cta_examples': [],
+                'structure': {'has_intro_paragraph': False, 'has_sections': False, 'avg_line_length': 0, 'blank_lines': 0, 'formatting_score': 1.0},
+                'has_timestamps': False,
+                'has_social_links': False,
+                'has_hashtags': False,
+                'cta_effectiveness_score': 0,
+                'description_quality_score': 0,
+                'seo_score': 0,
+                'optimization_suggestions': ['No description available - add a detailed description'],
+                'missing_elements': ['Description text is missing'],
+                'strengths': []
+            }
 
         # Basic analysis (no API needed)
         links = self.extract_links(description)
@@ -81,7 +108,7 @@ class DescriptionAnalyzer:
 
         # AI-powered analysis (if API key provided)
         if self.client:
-            ai_analysis = self._ai_analyze_description(description, title)
+            ai_analysis = self._ai_analyze_description(description, title, yt_analytics)
             if ai_analysis:
                 result.update(ai_analysis)
 
@@ -242,19 +269,36 @@ class DescriptionAnalyzer:
             'cta_examples': cta_examples[:5]  # Top 5 examples
         }
 
-    def _ai_analyze_description(self, description: str, title: str) -> Optional[Dict]:
+    def _ai_analyze_description(self, description: str, title: str, yt_analytics: Dict = None) -> Optional[Dict]:
         """
         AI-powered description analysis using Claude.
 
         Args:
             description: Description text
             title: Video title
+            yt_analytics: YT Analytics data from BigQuery (optional)
 
         Returns:
             AI analysis results or None
         """
         if not self.client:
             return None
+
+        # Build YT Analytics context if available
+        yt_context = ""
+        if yt_analytics and yt_analytics.get('total_views', 0) > 0:
+            yt_context = f"""
+**YOUTUBE ANALYTICS (Last 90 days):**
+- Total Views: {yt_analytics.get('total_views', 0):,}
+- Total Impressions: {yt_analytics.get('total_impressions', 0):,}
+- Overall CTR: {yt_analytics.get('overall_ctr', 0):.2f}%
+- Main Keyword: {yt_analytics.get('main_keyword', 'N/A')}
+- Silo/Category: {yt_analytics.get('silo', 'N/A')}
+
+**Traffic Sources Performance:**
+"""
+            for source in yt_analytics.get('by_traffic_source', [])[:5]:
+                yt_context += f"- {source['traffic_source']}: {source['views']:,} views, {source['avg_ctr']:.2f}% CTR, {source['avg_view_percentage']:.1f}% avg watch\n"
 
         prompt = f"""
 Analyze this YouTube video description for effectiveness (Tech/Software niche):
@@ -263,7 +307,7 @@ Analyze this YouTube video description for effectiveness (Tech/Software niche):
 
 **DESCRIPTION:**
 {description}
-
+{yt_context}
 Provide analysis in JSON format:
 
 {{
@@ -281,16 +325,19 @@ Provide analysis in JSON format:
 - Are CTAs clear and compelling?
 - Are they action-oriented?
 - Are they placed strategically?
+- Consider the traffic source CTR data if available
 
 **description_quality_score** (1-10):
 - Is it informative and engaging?
 - Does it provide value beyond the video?
 - Is it well-structured?
+- Consider average view percentage if available
 
 **seo_score** (1-10):
-- Keywords present?
+- Keywords present (especially the main keyword)?
 - Good for search discovery?
 - Proper formatting?
+- Consider if the main keyword appears in the description
 
 Return ONLY valid JSON, no other text.
 """

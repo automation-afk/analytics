@@ -43,7 +43,8 @@ class AnalysisService:
     def analyze_video(
         self,
         video_id: str,
-        analysis_types: List[str]
+        analysis_types: List[str],
+        progress_callback: callable = None
     ) -> AnalysisResults:
         """
         Run AI analysis on a single video.
@@ -52,6 +53,7 @@ class AnalysisService:
             video_id: YouTube video ID
             analysis_types: List of analysis types to run
                           ['script', 'description', 'affiliate', 'conversion']
+            progress_callback: Optional callback(step, progress, message) for progress updates
 
         Returns:
             AnalysisResults object
@@ -59,6 +61,14 @@ class AnalysisService:
         Raises:
             Exception if video not found or analysis fails
         """
+        def update_progress(step: str, progress: int, message: str = ""):
+            """Update progress via callback if provided."""
+            if progress_callback:
+                try:
+                    progress_callback(step, progress, message)
+                except Exception as e:
+                    logger.warning(f"Progress callback error: {e}")
+
         logger.info(f"Starting analysis for video: {video_id}")
         logger.info(f"Analysis types: {analysis_types}")
 
@@ -67,8 +77,26 @@ class AnalysisService:
         if not video:
             raise Exception(f"Video not found: {video_id}")
 
-        # Fetch transcript
-        transcript = self.bigquery.get_transcript(video_id)
+        # Fetch transcript - check local DB first, then BigQuery
+        transcript = None
+        local_transcript = None
+
+        # Check local DB for transcript (from our transcription service)
+        if self.bigquery.local_db:
+            local_transcript = self.bigquery.local_db.get_transcript(video_id)
+            if local_transcript:
+                transcript = local_transcript.get('transcript')
+                logger.info(f"Using local transcript for {video_id} ({local_transcript.get('word_count')} words)")
+
+                # Also get description from local transcript if video doesn't have one
+                if (not video.description or not video.description.strip()) and local_transcript.get('description'):
+                    video.description = local_transcript.get('description')
+                    logger.info(f"Using description from local transcript for {video_id}")
+
+        # Fallback to BigQuery transcript
+        if not transcript:
+            transcript = self.bigquery.get_transcript(video_id)
+
         if not transcript and 'script' in analysis_types:
             logger.warning(f"No transcript found for video: {video_id}")
             # Continue anyway - some analyses might not need transcript
@@ -84,9 +112,11 @@ class AnalysisService:
 
         # Run analyses based on requested types
         timestamp = datetime.now()
+        update_progress('fetching', 10, 'Video data loaded, starting analysis...')
 
         # 1. Script Quality Analysis
         if 'script' in analysis_types and transcript:
+            update_progress('script', 15, 'Analyzing script quality...')
             try:
                 logger.info(f"Running script analysis for {video_id}")
                 result = self.content_analyzer.analyze_script_quality(
@@ -120,6 +150,7 @@ class AnalysisService:
                 # Store to BigQuery
                 self.bigquery.store_script_analysis(script_analysis)
                 logger.info(f"Script analysis completed and stored for {video_id}")
+                update_progress('script', 35, 'Script analysis complete')
 
             except Exception as e:
                 logger.error(f"Error in script analysis: {str(e)}")
@@ -128,15 +159,42 @@ class AnalysisService:
             time.sleep(2)
 
         # 2. Description Analysis
-        if 'description' in analysis_types and video.description:
+        if 'description' in analysis_types:
+            update_progress('description', 40, 'Analyzing description...')
             try:
-                logger.info(f"Running description analysis for {video_id}")
-                result = self.description_analyzer.analyze(
-                    description=video.description,
-                    title=video.title
-                )
+                # Fetch YT Analytics data from BigQuery (last 90 days) - always try this
+                update_progress('description', 42, 'Fetching YT Analytics data...')
+                yt_analytics_summary = self.bigquery.get_yt_analytics_summary(video_id, days=90)
+                logger.info(f"YT Analytics for {video_id}: {yt_analytics_summary.get('total_views', 0)} views, {len(yt_analytics_summary.get('by_traffic_source', []))} traffic sources")
 
-                # Convert to DescriptionAnalysis model
+                # Check if we have a description to analyze
+                if video.description and video.description.strip():
+                    logger.info(f"Running description analysis for {video_id} (description length: {len(video.description)})")
+
+                    # Run AI description analysis
+                    update_progress('description', 45, 'Running AI description analysis...')
+                    result = self.description_analyzer.analyze(
+                        description=video.description,
+                        title=video.title,
+                        yt_analytics=yt_analytics_summary  # Pass YT Analytics data
+                    )
+                else:
+                    logger.warning(f"No description available for {video_id}, storing YT Analytics data only")
+                    # Create minimal result with just YT Analytics data
+                    result = {
+                        'cta_effectiveness_score': 0.0,
+                        'description_quality_score': 0.0,
+                        'seo_score': 0.0,
+                        'total_links': 0,
+                        'affiliate_links': 0,
+                        'link_positioning_score': 0.0,
+                        'has_clear_cta': False,
+                        'optimization_suggestions': ['No description available - run Transcribe & Analyze to fetch from YouTube'],
+                        'missing_elements': ['Video description not available'],
+                        'strengths': []
+                    }
+
+                # Convert to DescriptionAnalysis model with YT Analytics data
                 description_analysis = DescriptionAnalysis(
                     video_id=video_id,
                     analysis_timestamp=timestamp,
@@ -149,21 +207,32 @@ class AnalysisService:
                     has_clear_cta=result.get('has_clear_cta', False),
                     optimization_suggestions=result.get('optimization_suggestions', []),
                     missing_elements=result.get('missing_elements', []),
-                    strengths=result.get('strengths', [])
+                    strengths=result.get('strengths', []),
+                    # YT Analytics data from BigQuery
+                    yt_total_views=yt_analytics_summary.get('total_views', 0),
+                    yt_total_impressions=yt_analytics_summary.get('total_impressions', 0),
+                    yt_overall_ctr=yt_analytics_summary.get('overall_ctr', 0.0),
+                    yt_by_traffic_source=yt_analytics_summary.get('by_traffic_source', []),
+                    main_keyword=yt_analytics_summary.get('main_keyword', ''),
+                    silo=yt_analytics_summary.get('silo', '')
                 )
 
-                # Store to BigQuery
+                # Store to local database
                 self.bigquery.store_description_analysis(description_analysis)
                 logger.info(f"Description analysis completed and stored for {video_id}")
+                update_progress('description', 55, 'Description analysis complete')
 
             except Exception as e:
                 logger.error(f"Error in description analysis: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
 
             # Rate limiting
             time.sleep(2)
 
         # 3. Affiliate Product Recommendations
         if 'affiliate' in analysis_types and transcript:
+            update_progress('affiliate', 60, 'Generating affiliate recommendations...')
             try:
                 logger.info(f"Running affiliate recommendations for {video_id}")
                 results = self.affiliate_recommender.recommend_products(
@@ -194,6 +263,7 @@ class AnalysisService:
                 if affiliate_recommendations:
                     self.bigquery.store_affiliate_recommendations(affiliate_recommendations)
                     logger.info(f"Affiliate recommendations completed and stored for {video_id}")
+                    update_progress('affiliate', 75, 'Affiliate recommendations complete')
 
             except Exception as e:
                 logger.error(f"Error in affiliate recommendations: {str(e)}")
@@ -203,13 +273,14 @@ class AnalysisService:
 
         # 4. Conversion Analysis (AI-powered with Claude)
         if 'conversion' in analysis_types:
+            update_progress('conversion', 80, 'Analyzing conversion metrics...')
             try:
                 logger.info(f"Running AI-powered conversion analysis for {video_id}")
 
-                if revenue_metrics and revenue_metrics.clicks > 0 and transcript:
-                    # Use AI to analyze conversion drivers
+                if revenue_metrics and revenue_metrics.clicks > 0:
+                    # Use AI to analyze conversion drivers (works with or without transcript)
                     ai_analysis = self.conversion_analyzer.analyze_conversion_drivers(
-                        transcript=transcript,
+                        transcript=transcript or "",
                         title=video.title,
                         description=video.description or "",
                         revenue=revenue_metrics.revenue,
@@ -235,11 +306,12 @@ class AnalysisService:
                         underperformance_reasons=ai_analysis.get('underperformance_reasons', []),
                         recommendations=ai_analysis.get('recommendations', [])
                     )
+                    logger.info(f"Conversion analysis complete: {len(ai_analysis.get('conversion_drivers', []))} drivers identified")
                 else:
-                    # Create basic conversion analysis when no revenue data or transcript
+                    # Create basic conversion analysis when no revenue data
                     from datetime import date
                     if revenue_metrics:
-                        # Has revenue but no transcript
+                        # Has revenue but no clicks
                         conversion_analysis = ConversionAnalysis(
                             video_id=video_id,
                             analysis_timestamp=timestamp,
@@ -251,9 +323,9 @@ class AnalysisService:
                             conversion_rate=revenue_metrics.conversion_rate,
                             revenue_per_click=revenue_metrics.revenue_per_click,
                             revenue_per_1k_views=revenue_metrics.revenue_per_1k_views,
-                            conversion_drivers=["No transcript available for AI analysis"],
+                            conversion_drivers=["No affiliate clicks yet - analysis requires click data"],
                             underperformance_reasons=[],
-                            recommendations=["Add transcript to enable detailed conversion analysis"]
+                            recommendations=["Ensure affiliate links are properly placed in description"]
                         )
                     else:
                         # No revenue data at all
@@ -276,10 +348,12 @@ class AnalysisService:
                 # Store to local database
                 self.bigquery.store_conversion_analysis(conversion_analysis)
                 logger.info(f"Conversion analysis completed and stored for {video_id}")
+                update_progress('conversion', 95, 'Conversion analysis complete')
 
             except Exception as e:
                 logger.error(f"Error in conversion analysis: {str(e)}")
 
+        update_progress('saving', 98, 'Finalizing results...')
         # Return combined results
         return AnalysisResults(
             video=video,

@@ -31,6 +31,7 @@ class RevenueMetrics:
     conversion_rate: float = 0.0
     revenue_per_click: float = 0.0
     revenue_per_1k_views: float = 0.0
+    impression_ctr: float = 0.0  # CTR from YT Analytics (already in %)
 
 
 @dataclass
@@ -96,6 +97,13 @@ class DescriptionAnalysis:
     optimization_suggestions: List[str] = field(default_factory=list)
     missing_elements: List[str] = field(default_factory=list)
     strengths: List[str] = field(default_factory=list)
+    # YT Analytics data (from BigQuery - last 90 days)
+    yt_total_views: int = 0
+    yt_total_impressions: int = 0
+    yt_overall_ctr: float = 0.0
+    yt_by_traffic_source: List[dict] = field(default_factory=list)  # [{traffic_source, views, impressions, avg_ctr, avg_view_percentage}]
+    main_keyword: str = ""
+    silo: str = ""
 
 
 @dataclass

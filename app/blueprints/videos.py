@@ -17,6 +17,7 @@ def detail(video_id):
     """
     # Check if analysis is in progress
     is_analyzing = cache.get(f'analyzing_{video_id}') or False
+    is_transcribing = cache.get(f'transcribing_{video_id}') or False
 
     # Get complete analysis results (don't cache if analyzing)
     analysis = current_app.bigquery.get_latest_analysis(video_id)
@@ -24,6 +25,11 @@ def detail(video_id):
     if not analysis or not analysis.video:
         flash(f'Video not found: {video_id}', 'error')
         return redirect(url_for('dashboard.videos_list'))
+
+    # Get transcript data from local database (includes emotions, frame analysis)
+    transcript_data = None
+    if current_app.local_db:
+        transcript_data = current_app.local_db.get_transcript(video_id)
 
     return render_template(
         'videos/detail.html',
@@ -34,7 +40,9 @@ def detail(video_id):
         affiliate_recs=analysis.affiliate_recommendations,
         description_analysis=analysis.description_analysis,
         conversion_analysis=analysis.conversion_analysis,
-        is_analyzing=is_analyzing
+        transcript_data=transcript_data,
+        is_analyzing=is_analyzing,
+        is_transcribing=is_transcribing
     )
 
 

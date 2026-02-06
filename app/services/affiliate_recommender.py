@@ -79,7 +79,25 @@ class AffiliateRecommender:
                     response_text = response_text.rsplit('```', 1)[0]
                 response_text = response_text.strip()
 
-            products = json.loads(response_text)
+            data = json.loads(response_text)
+
+            # Extract products list from the JSON response
+            if isinstance(data, dict) and 'products' in data:
+                products = data['products']
+            elif isinstance(data, list):
+                products = data
+            else:
+                logger.error(f"Unexpected response format: {type(data)}")
+                return []
+
+            # Normalize scores (convert 1-10 to 0-1 for relevance, percentage to 0-1 for conversion)
+            for p in products:
+                # Normalize relevance score from 1-10 to 0-1
+                if 'relevance_score' in p and p['relevance_score'] > 1:
+                    p['relevance_score'] = p['relevance_score'] / 10.0
+                # Normalize conversion probability from 0-100 to 0-1
+                if 'conversion_probability' in p and p['conversion_probability'] > 1:
+                    p['conversion_probability'] = p['conversion_probability'] / 100.0
 
             logger.info(f"Generated {len(products)} product recommendations")
             return products
