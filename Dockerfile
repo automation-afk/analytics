@@ -26,5 +26,5 @@ ENV PORT=8080
 # Expose port
 EXPOSE 8080
 
-# Run with Gunicorn
-CMD gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+# Run with Gunicorn (use shell form to expand $PORT)
+CMD ["/bin/sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 4 --timeout 120"]
