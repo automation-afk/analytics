@@ -1,5 +1,5 @@
 """Videos blueprint - individual video detail pages."""
-from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request
+from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request, session
 from app.extensions import cache
 from app.blueprints.auth import login_required
 
@@ -47,6 +47,12 @@ def detail(video_id):
     if not analysis or not analysis.video:
         flash(f'Video not found: {video_id}', 'error')
         return redirect(url_for('dashboard.videos_list'))
+
+    # Log video detail view
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        video_title = analysis.video.title if analysis.video else None
+        current_app.activity_logger.log_view_video_detail(email, video_id, video_title)
 
     # Get transcript data from local database (includes emotions, frame analysis)
     transcript_data = None
@@ -117,6 +123,13 @@ def analyze_single(video_id):
             except:
                 # If clearing flag fails, it will expire after 10 minutes anyway
                 pass
+
+    # Log analysis start
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_start_analysis(
+            email, video_id, ['script', 'description', 'affiliate', 'conversion']
+        )
 
     # Set analyzing flag in cache (expires in 10 minutes)
     cache.set(f'analyzing_{video_id}', True, timeout=600)

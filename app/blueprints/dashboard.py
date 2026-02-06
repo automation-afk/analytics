@@ -1,5 +1,5 @@
 """Dashboard blueprint - main overview and video list pages."""
-from flask import Blueprint, render_template, request, current_app, redirect, url_for
+from flask import Blueprint, render_template, request, current_app, redirect, url_for, session
 from app.extensions import cache
 from app.blueprints.auth import login_required
 
@@ -26,6 +26,11 @@ def overview():
     Main dashboard overview page.
     Shows KPI cards, charts, and recent analyses.
     """
+    # Log dashboard view
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_view_dashboard(email)
+
     # Get dashboard statistics from BigQuery
     stats = current_app.bigquery.get_dashboard_stats()
 
@@ -51,6 +56,16 @@ def videos_list():
     channel_code = request.args.get('channel')
     video_id = request.args.get('video_id')
     has_analysis = request.args.get('has_analysis')
+
+    # Log videos list view
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_view_videos_list(email, {
+            'channel': channel_code,
+            'video_id': video_id,
+            'has_analysis': has_analysis,
+            'page': page
+        })
 
     # Convert has_analysis to boolean
     if has_analysis == 'true':

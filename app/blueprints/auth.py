@@ -110,6 +110,10 @@ def authorize():
         session['user_picture'] = user_info.get('picture', '')
         session.permanent = True
 
+        # Log login to Google Sheets
+        if current_app.activity_logger:
+            current_app.activity_logger.log_login(email)
+
         flash(f'Welcome, {user_info.get("name", "User")}!', 'success')
 
         # Redirect to next page or dashboard
@@ -127,6 +131,11 @@ def authorize():
 @bp.route('/logout')
 def logout():
     """Logout and clear session completely."""
+    # Log logout before clearing session
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_logout(email)
+
     # Clear all session data
     session.clear()
 

@@ -9,6 +9,10 @@ google-cloud-bigquery>=3.13.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 
+# Google Sheets API (for activity logging)
+google-api-python-client>=2.100.0
+pytz>=2024.1
+
 # AI APIs for Analysis
 anthropic>=0.40.0  # Claude API
 openai>=1.12.0     # ChatGPT API

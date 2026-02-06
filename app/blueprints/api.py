@@ -1,5 +1,5 @@
 """API blueprint - JSON endpoints for AJAX requests."""
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, session
 from app.extensions import cache
 from app.blueprints.auth import login_required
 
@@ -500,6 +500,16 @@ def transcribe_video():
 
     from app.services.transcription_service import TranscriptionService
     import threading
+
+    # Log transcription start
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_start_transcription(email, video_id, {
+            'transcript': generate_transcript,
+            'emotions': analyze_emotions,
+            'frames': analyze_frames,
+            'insights': generate_insights
+        })
 
     cache.set(f'transcribing_{video_id}', True, timeout=900)
     cache.set(f'transcribe_progress_{video_id}', {'step': 'download', 'progress': 0, 'message': 'Starting...'}, timeout=900)

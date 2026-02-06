@@ -47,6 +47,12 @@ def create_app(config_name='development'):
         local_db=app.local_db  # Pass local_db for analysis results
     )
 
+    # Initialize Google Sheets logging service (for activity tracking)
+    from app.services.sheets_logging_service import SheetsLoggingService
+    app.activity_logger = SheetsLoggingService(
+        credentials_path=app.config['GOOGLE_CREDENTIALS_PATH']
+    )
+
     # Initialize OAuth
     from app.blueprints.auth import init_oauth
     init_oauth(app)

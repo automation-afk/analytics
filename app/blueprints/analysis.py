@@ -1,5 +1,5 @@
 """Analysis blueprint - trigger and monitor analysis jobs."""
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify, session
 import uuid
 from datetime import datetime
 from app.blueprints.auth import login_required
@@ -14,6 +14,11 @@ jobs = {}
 @login_required
 def trigger_form():
     """Show analysis trigger form."""
+    # Log page view
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_view_analysis_page(email)
+
     return render_template('analysis/trigger.html')
 
 
@@ -53,6 +58,14 @@ def trigger_analysis():
     if not video_ids:
         flash('No videos found matching criteria', 'warning')
         return redirect(url_for('analysis.trigger_form'))
+
+    # Log analysis trigger
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        if video_id:
+            current_app.activity_logger.log_start_analysis(email, video_id, analysis_types)
+        else:
+            current_app.activity_logger.log_batch_analysis(email, len(video_ids), channel_code)
 
     # Create analysis service
     analysis_service = AnalysisService(
@@ -125,6 +138,11 @@ def status(job_id):
 @login_required
 def history():
     """Show analysis history from database."""
+    # Log page view
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_view_history(email)
+
     import sqlite3
 
     # Get analysis history from local database
