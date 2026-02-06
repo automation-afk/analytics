@@ -351,14 +351,35 @@ class TranscriptionService:
         return None
 
     def _download_from_url(self, url: str, output_path: Path, media_type: str = 'audio') -> Optional[Path]:
-        """Download file from direct URL (from RapidAPI)."""
+        """Download file from direct URL (from RapidAPI).
+
+        YouTube CDN URLs require proper headers to avoid 403 errors.
+        """
         try:
             logger.info(f"Downloading {media_type} from URL...")
-            response = requests.get(url, timeout=300, stream=True)
 
-            if response.status_code != 200:
+            # Headers required for YouTube CDN - mimics browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'identity;q=1, *;q=0',
+                'Range': 'bytes=0-',
+                'Referer': 'https://www.youtube.com/',
+                'Origin': 'https://www.youtube.com',
+            }
+
+            response = requests.get(url, headers=headers, timeout=300, stream=True)
+
+            # 206 Partial Content is also valid (due to Range header)
+            if response.status_code not in [200, 206]:
                 logger.error(f"Download failed: {response.status_code}")
-                return None
+                # Try without Range header as fallback
+                headers.pop('Range', None)
+                response = requests.get(url, headers=headers, timeout=300, stream=True)
+                if response.status_code != 200:
+                    logger.error(f"Download retry failed: {response.status_code}")
+                    return None
 
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0

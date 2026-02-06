@@ -30,6 +30,9 @@ pandas>=2.1.0
 # Production WSGI Server
 gunicorn>=21.2.0
 
+# PostgreSQL (for Railway production database)
+psycopg2-binary>=2.9.9
+
 # Utilities
 requests>=2.31.0
 python-dateutil>=2.8.2

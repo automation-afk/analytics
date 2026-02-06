@@ -1,5 +1,4 @@
-"""Local database service for storing AI analysis results using SQLite."""
-import sqlite3
+"""Local database service for storing AI analysis results using SQLite or PostgreSQL."""
 import logging
 from datetime import datetime
 from typing import List, Optional
@@ -15,166 +14,211 @@ logger = logging.getLogger(__name__)
 
 
 class LocalDBService:
-    """Service for managing local SQLite database for analysis results."""
+    """Service for managing local database for analysis results.
+
+    Supports both SQLite (local development) and PostgreSQL (Railway production).
+    Uses DATABASE_URL environment variable to determine which to use.
+    """
 
     def __init__(self, db_path: str = None):
         """
-        Initialize local database service.
+        Initialize database service.
 
         Args:
-            db_path: Path to SQLite database file (defaults to web_app/data/analysis.db)
+            db_path: Path to SQLite database file (only used if DATABASE_URL not set)
         """
-        if db_path is None:
-            # Check for environment variable first (for Railway/production)
-            db_path = os.getenv('DATABASE_PATH')
+        # Check for PostgreSQL DATABASE_URL first (Railway provides this)
+        self.database_url = os.getenv('DATABASE_URL')
+        self.use_postgres = bool(self.database_url)
 
+        if self.use_postgres:
+            # PostgreSQL mode
+            self.db_path = None
+            logger.info(f"Using PostgreSQL database")
+        else:
+            # SQLite mode (local development)
             if db_path is None:
-                # Default to data/analysis.db in app directory
-                # Use /app/data for Railway, local path for development
-                if os.path.exists('/app'):
-                    # Running on Railway/Docker
-                    data_dir = '/app/data'
-                else:
-                    # Local development
-                    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                    data_dir = os.path.join(base_dir, 'data')
+                db_path = os.getenv('DATABASE_PATH')
 
-                os.makedirs(data_dir, exist_ok=True)
-                db_path = os.path.join(data_dir, 'analysis.db')
-                logger.info(f"Using database path: {db_path}")
+                if db_path is None:
+                    if os.path.exists('/app'):
+                        data_dir = '/app/data'
+                    else:
+                        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                        data_dir = os.path.join(base_dir, 'data')
 
-        self.db_path = db_path
+                    os.makedirs(data_dir, exist_ok=True)
+                    db_path = os.path.join(data_dir, 'analysis.db')
+
+            self.db_path = db_path
+            logger.info(f"Using SQLite database: {db_path}")
+
         self._init_database()
-        logger.info(f"LocalDBService initialized with database: {db_path}")
+        logger.info(f"LocalDBService initialized ({'PostgreSQL' if self.use_postgres else 'SQLite'})")
+
+    def _get_connection(self):
+        """Get database connection based on configuration."""
+        if self.use_postgres:
+            import psycopg2
+            return psycopg2.connect(self.database_url)
+        else:
+            import sqlite3
+            return sqlite3.connect(self.db_path)
+
+    def _get_placeholder(self):
+        """Get parameter placeholder for queries."""
+        return "%s" if self.use_postgres else "?"
 
     def _init_database(self):
         """Create database tables if they don't exist."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
+        p = self._get_placeholder()
+
+        # Determine auto-increment syntax
+        if self.use_postgres:
+            auto_id = "SERIAL PRIMARY KEY"
+            int_type = "INTEGER"
+            text_type = "TEXT"
+            real_type = "REAL"
+        else:
+            auto_id = "INTEGER PRIMARY KEY AUTOINCREMENT"
+            int_type = "INTEGER"
+            text_type = "TEXT"
+            real_type = "REAL"
+
         # Table 1: Script Analysis
-        cursor.execute("""
+        cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS script_analysis (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_id},
             video_id TEXT NOT NULL,
             channel_code TEXT,
             analysis_timestamp TEXT NOT NULL,
-            script_quality_score REAL,
-            hook_effectiveness_score REAL,
-            call_to_action_score REAL,
-            persuasion_effectiveness_score REAL,
-            user_intent_match_score REAL,
-            persuasion_techniques TEXT,  -- JSON array
-            key_strengths TEXT,  -- JSON array
-            improvement_areas TEXT,  -- JSON array
+            script_quality_score {real_type},
+            hook_effectiveness_score {real_type},
+            call_to_action_score {real_type},
+            persuasion_effectiveness_score {real_type},
+            user_intent_match_score {real_type},
+            persuasion_techniques TEXT,
+            key_strengths TEXT,
+            improvement_areas TEXT,
             target_audience TEXT,
-            content_value_score REAL,
+            content_value_score {real_type},
             identified_intent TEXT,
-            has_clear_intro INTEGER,
-            has_clear_cta INTEGER,
-            problem_solution_structure INTEGER,
-            readability_score REAL,
+            has_clear_intro {int_type},
+            has_clear_cta {int_type},
+            problem_solution_structure {int_type},
+            readability_score {real_type},
             UNIQUE(video_id, analysis_timestamp)
         )
         """)
 
         # Table 2: Affiliate Recommendations
-        cursor.execute("""
+        cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS affiliate_recommendations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_id},
             video_id TEXT NOT NULL,
             recommendation_timestamp TEXT NOT NULL,
-            product_rank INTEGER,
+            product_rank {int_type},
             product_name TEXT,
             product_category TEXT,
-            relevance_score REAL,
-            conversion_probability REAL,
+            relevance_score {real_type},
+            conversion_probability {real_type},
             recommendation_reasoning TEXT,
             where_to_mention TEXT,
-            mentioned_in_video INTEGER,
+            mentioned_in_video {int_type},
             amazon_asin TEXT,
             price_range TEXT
         )
         """)
 
         # Table 3: Description Analysis
-        cursor.execute("""
+        cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS description_analysis (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_id},
             video_id TEXT NOT NULL,
             analysis_timestamp TEXT NOT NULL,
-            cta_effectiveness_score REAL,
-            description_quality_score REAL,
-            seo_score REAL,
-            total_links INTEGER,
-            affiliate_links INTEGER,
-            link_positioning_score REAL,
-            has_clear_cta INTEGER,
-            optimization_suggestions TEXT,  -- JSON array
-            missing_elements TEXT,  -- JSON array
-            strengths TEXT,  -- JSON array
+            cta_effectiveness_score {real_type},
+            description_quality_score {real_type},
+            seo_score {real_type},
+            total_links {int_type},
+            affiliate_links {int_type},
+            link_positioning_score {real_type},
+            has_clear_cta {int_type},
+            optimization_suggestions TEXT,
+            missing_elements TEXT,
+            strengths TEXT,
+            yt_total_views {int_type} DEFAULT 0,
+            yt_total_impressions {int_type} DEFAULT 0,
+            yt_overall_ctr {real_type} DEFAULT 0.0,
+            yt_by_traffic_source TEXT,
+            main_keyword TEXT,
+            silo TEXT,
             UNIQUE(video_id, analysis_timestamp)
         )
         """)
 
         # Table 4: Conversion Analysis
-        cursor.execute("""
+        cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS conversion_analysis (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_id},
             video_id TEXT NOT NULL,
             analysis_timestamp TEXT NOT NULL,
             metrics_date TEXT,
-            revenue REAL,
-            clicks INTEGER,
-            sales INTEGER,
-            views INTEGER,
-            conversion_rate REAL,
-            revenue_per_click REAL,
-            revenue_per_1k_views REAL,
-            conversion_drivers TEXT,  -- JSON array
-            underperformance_reasons TEXT,  -- JSON array
-            recommendations TEXT,  -- JSON array
+            revenue {real_type},
+            clicks {int_type},
+            sales {int_type},
+            views {int_type},
+            conversion_rate {real_type},
+            revenue_per_click {real_type},
+            revenue_per_1k_views {real_type},
+            conversion_drivers TEXT,
+            underperformance_reasons TEXT,
+            recommendations TEXT,
             UNIQUE(video_id, analysis_timestamp)
         )
         """)
 
-        # Table 5: Video Transcripts (for AI analysis)
-        cursor.execute("""
+        # Table 5: Video Transcripts
+        cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS video_transcripts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_id},
             video_id TEXT NOT NULL UNIQUE,
             title TEXT,
             channel TEXT,
-            duration_seconds INTEGER,
+            duration_seconds {int_type},
             transcript TEXT NOT NULL,
-            word_count INTEGER,
-            provider TEXT,  -- groq or openai
-            segments TEXT,  -- JSON array with timestamps
-            frames_json TEXT,  -- JSON array of frame timestamps
-            frame_count INTEGER DEFAULT 0,
-            frame_interval_seconds INTEGER,
-            frame_analysis TEXT,  -- JSON: vision AI analysis of frames (text, no images)
-            emotions TEXT,  -- JSON: Hume AI voice emotion analysis
+            word_count {int_type},
+            provider TEXT,
+            segments TEXT,
+            frames_json TEXT,
+            frame_count {int_type} DEFAULT 0,
+            frame_interval_seconds {int_type},
+            frame_analysis TEXT,
+            emotions TEXT,
+            description TEXT,
+            content_insights TEXT,
             transcribed_at TEXT NOT NULL,
             updated_at TEXT
         )
         """)
 
-        # Table 6: Transcript History (stores old versions when data is replaced)
-        cursor.execute("""
+        # Table 6: Transcript History
+        cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS video_transcripts_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_id},
             video_id TEXT NOT NULL,
             title TEXT,
             channel TEXT,
-            duration_seconds INTEGER,
+            duration_seconds {int_type},
             transcript TEXT,
-            word_count INTEGER,
+            word_count {int_type},
             provider TEXT,
             segments TEXT,
             frames_json TEXT,
-            frame_count INTEGER DEFAULT 0,
-            frame_interval_seconds INTEGER,
+            frame_count {int_type} DEFAULT 0,
+            frame_interval_seconds {int_type},
             frame_analysis TEXT,
             emotions TEXT,
             description TEXT,
@@ -184,90 +228,126 @@ class LocalDBService:
         )
         """)
 
-        # Create indexes for performance
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_script_video_id ON script_analysis(video_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_affiliate_video_id ON affiliate_recommendations(video_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_description_video_id ON description_analysis(video_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversion_video_id ON conversion_analysis(video_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transcript_video_id ON video_transcripts(video_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_transcript_history_video_id ON video_transcripts_history(video_id)")
+        # Create indexes (syntax is the same for both)
+        indexes = [
+            ("idx_script_video_id", "script_analysis", "video_id"),
+            ("idx_affiliate_video_id", "affiliate_recommendations", "video_id"),
+            ("idx_description_video_id", "description_analysis", "video_id"),
+            ("idx_conversion_video_id", "conversion_analysis", "video_id"),
+            ("idx_transcript_video_id", "video_transcripts", "video_id"),
+            ("idx_transcript_history_video_id", "video_transcripts_history", "video_id"),
+        ]
+
+        for idx_name, table, column in indexes:
+            try:
+                cursor.execute(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table}({column})")
+            except Exception as e:
+                # Index might already exist with different name
+                logger.debug(f"Index creation note: {e}")
 
         conn.commit()
         conn.close()
-
-        # Run migrations for existing databases
-        self._migrate_database()
         logger.info("Database tables initialized successfully")
 
-    def _migrate_database(self):
-        """Add new columns to existing database tables."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+    def _execute_query(self, query: str, params: tuple = None, fetch: str = None):
+        """Execute a query with proper parameter substitution.
 
-        # Check and add frame_analysis column
+        Args:
+            query: SQL query with ? placeholders
+            params: Query parameters
+            fetch: 'one', 'all', or None
+
+        Returns:
+            Query results or None
+        """
+        conn = self._get_connection()
+
+        if self.use_postgres:
+            # PostgreSQL uses %s instead of ?
+            query = query.replace('?', '%s')
+            conn.row_factory = None
+            cursor = conn.cursor()
+        else:
+            import sqlite3
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
         try:
-            cursor.execute("SELECT frame_analysis FROM video_transcripts LIMIT 1")
-        except sqlite3.OperationalError:
-            logger.info("Adding frame_analysis column to video_transcripts")
-            cursor.execute("ALTER TABLE video_transcripts ADD COLUMN frame_analysis TEXT")
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
 
-        # Check and add emotions column
-        try:
-            cursor.execute("SELECT emotions FROM video_transcripts LIMIT 1")
-        except sqlite3.OperationalError:
-            logger.info("Adding emotions column to video_transcripts")
-            cursor.execute("ALTER TABLE video_transcripts ADD COLUMN emotions TEXT")
-
-        # Check and add description column for YouTube video description
-        try:
-            cursor.execute("SELECT description FROM video_transcripts LIMIT 1")
-        except sqlite3.OperationalError:
-            logger.info("Adding description column to video_transcripts")
-            cursor.execute("ALTER TABLE video_transcripts ADD COLUMN description TEXT")
-
-        # Check and add content_insights column for multimodal AI analysis
-        try:
-            cursor.execute("SELECT content_insights FROM video_transcripts LIMIT 1")
-        except sqlite3.OperationalError:
-            logger.info("Adding content_insights column to video_transcripts")
-            cursor.execute("ALTER TABLE video_transcripts ADD COLUMN content_insights TEXT")
-
-        # Check and add YT Analytics columns to description_analysis
-        yt_columns = [
-            ('yt_total_views', 'INTEGER DEFAULT 0'),
-            ('yt_total_impressions', 'INTEGER DEFAULT 0'),
-            ('yt_overall_ctr', 'REAL DEFAULT 0.0'),
-            ('yt_by_traffic_source', 'TEXT'),  # JSON array
-            ('main_keyword', 'TEXT'),
-            ('silo', 'TEXT')
-        ]
-        for col_name, col_type in yt_columns:
-            try:
-                cursor.execute(f"SELECT {col_name} FROM description_analysis LIMIT 1")
-            except sqlite3.OperationalError:
-                logger.info(f"Adding {col_name} column to description_analysis")
-                cursor.execute(f"ALTER TABLE description_analysis ADD COLUMN {col_name} {col_type}")
-
-        conn.commit()
-        conn.close()
+            if fetch == 'one':
+                row = cursor.fetchone()
+                if row and self.use_postgres:
+                    # Convert PostgreSQL tuple to dict using column names
+                    columns = [desc[0] for desc in cursor.description]
+                    return dict(zip(columns, row))
+                return dict(row) if row else None
+            elif fetch == 'all':
+                rows = cursor.fetchall()
+                if rows and self.use_postgres:
+                    columns = [desc[0] for desc in cursor.description]
+                    return [dict(zip(columns, row)) for row in rows]
+                return [dict(row) for row in rows] if rows else []
+            else:
+                conn.commit()
+                return cursor.rowcount
+        finally:
+            conn.close()
 
     def store_script_analysis(self, analysis: ScriptAnalysis) -> bool:
         """Store script analysis results to local database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
-            cursor.execute("""
-            INSERT OR REPLACE INTO script_analysis (
-                video_id, channel_code, analysis_timestamp,
-                script_quality_score, hook_effectiveness_score, call_to_action_score,
-                persuasion_effectiveness_score, user_intent_match_score,
-                persuasion_techniques, key_strengths, improvement_areas,
-                target_audience, content_value_score, identified_intent,
-                has_clear_intro, has_clear_cta, problem_solution_structure,
-                readability_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            # For PostgreSQL, use ON CONFLICT; for SQLite, use OR REPLACE
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO script_analysis (
+                    video_id, channel_code, analysis_timestamp,
+                    script_quality_score, hook_effectiveness_score, call_to_action_score,
+                    persuasion_effectiveness_score, user_intent_match_score,
+                    persuasion_techniques, key_strengths, improvement_areas,
+                    target_audience, content_value_score, identified_intent,
+                    has_clear_intro, has_clear_cta, problem_solution_structure,
+                    readability_score
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                ON CONFLICT (video_id, analysis_timestamp) DO UPDATE SET
+                    channel_code = EXCLUDED.channel_code,
+                    script_quality_score = EXCLUDED.script_quality_score,
+                    hook_effectiveness_score = EXCLUDED.hook_effectiveness_score,
+                    call_to_action_score = EXCLUDED.call_to_action_score,
+                    persuasion_effectiveness_score = EXCLUDED.persuasion_effectiveness_score,
+                    user_intent_match_score = EXCLUDED.user_intent_match_score,
+                    persuasion_techniques = EXCLUDED.persuasion_techniques,
+                    key_strengths = EXCLUDED.key_strengths,
+                    improvement_areas = EXCLUDED.improvement_areas,
+                    target_audience = EXCLUDED.target_audience,
+                    content_value_score = EXCLUDED.content_value_score,
+                    identified_intent = EXCLUDED.identified_intent,
+                    has_clear_intro = EXCLUDED.has_clear_intro,
+                    has_clear_cta = EXCLUDED.has_clear_cta,
+                    problem_solution_structure = EXCLUDED.problem_solution_structure,
+                    readability_score = EXCLUDED.readability_score
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO script_analysis (
+                    video_id, channel_code, analysis_timestamp,
+                    script_quality_score, hook_effectiveness_score, call_to_action_score,
+                    persuasion_effectiveness_score, user_intent_match_score,
+                    persuasion_techniques, key_strengths, improvement_areas,
+                    target_audience, content_value_score, identified_intent,
+                    has_clear_intro, has_clear_cta, problem_solution_structure,
+                    readability_score
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                """
+
+            cursor.execute(query, (
                 analysis.video_id,
                 analysis.channel_code,
                 analysis.analysis_timestamp.isoformat(),
@@ -300,25 +380,26 @@ class LocalDBService:
     def store_affiliate_recommendations(self, recommendations: List[AffiliateRecommendation]) -> bool:
         """Store affiliate recommendations to local database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
             # Delete old recommendations for this video
             if recommendations:
                 cursor.execute(
-                    "DELETE FROM affiliate_recommendations WHERE video_id = ?",
+                    f"DELETE FROM affiliate_recommendations WHERE video_id = {p}",
                     (recommendations[0].video_id,)
                 )
 
             # Insert new recommendations
             for rec in recommendations:
-                cursor.execute("""
+                cursor.execute(f"""
                 INSERT INTO affiliate_recommendations (
                     video_id, recommendation_timestamp, product_rank,
                     product_name, product_category, relevance_score,
                     conversion_probability, recommendation_reasoning,
                     where_to_mention, mentioned_in_video, amazon_asin, price_range
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
                 """, (
                     rec.video_id,
                     rec.recommendation_timestamp.isoformat(),
@@ -346,19 +427,51 @@ class LocalDBService:
     def store_description_analysis(self, analysis: DescriptionAnalysis) -> bool:
         """Store description analysis to local database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
-            cursor.execute("""
-            INSERT OR REPLACE INTO description_analysis (
-                video_id, analysis_timestamp, cta_effectiveness_score,
-                description_quality_score, seo_score, total_links,
-                affiliate_links, link_positioning_score, has_clear_cta,
-                optimization_suggestions, missing_elements, strengths,
-                yt_total_views, yt_total_impressions, yt_overall_ctr,
-                yt_by_traffic_source, main_keyword, silo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO description_analysis (
+                    video_id, analysis_timestamp, cta_effectiveness_score,
+                    description_quality_score, seo_score, total_links,
+                    affiliate_links, link_positioning_score, has_clear_cta,
+                    optimization_suggestions, missing_elements, strengths,
+                    yt_total_views, yt_total_impressions, yt_overall_ctr,
+                    yt_by_traffic_source, main_keyword, silo
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                ON CONFLICT (video_id, analysis_timestamp) DO UPDATE SET
+                    cta_effectiveness_score = EXCLUDED.cta_effectiveness_score,
+                    description_quality_score = EXCLUDED.description_quality_score,
+                    seo_score = EXCLUDED.seo_score,
+                    total_links = EXCLUDED.total_links,
+                    affiliate_links = EXCLUDED.affiliate_links,
+                    link_positioning_score = EXCLUDED.link_positioning_score,
+                    has_clear_cta = EXCLUDED.has_clear_cta,
+                    optimization_suggestions = EXCLUDED.optimization_suggestions,
+                    missing_elements = EXCLUDED.missing_elements,
+                    strengths = EXCLUDED.strengths,
+                    yt_total_views = EXCLUDED.yt_total_views,
+                    yt_total_impressions = EXCLUDED.yt_total_impressions,
+                    yt_overall_ctr = EXCLUDED.yt_overall_ctr,
+                    yt_by_traffic_source = EXCLUDED.yt_by_traffic_source,
+                    main_keyword = EXCLUDED.main_keyword,
+                    silo = EXCLUDED.silo
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO description_analysis (
+                    video_id, analysis_timestamp, cta_effectiveness_score,
+                    description_quality_score, seo_score, total_links,
+                    affiliate_links, link_positioning_score, has_clear_cta,
+                    optimization_suggestions, missing_elements, strengths,
+                    yt_total_views, yt_total_impressions, yt_overall_ctr,
+                    yt_by_traffic_source, main_keyword, silo
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                """
+
+            cursor.execute(query, (
                 analysis.video_id,
                 analysis.analysis_timestamp.isoformat(),
                 analysis.cta_effectiveness_score,
@@ -391,17 +504,42 @@ class LocalDBService:
     def store_conversion_analysis(self, analysis: ConversionAnalysis) -> bool:
         """Store conversion analysis to local database."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
-            cursor.execute("""
-            INSERT OR REPLACE INTO conversion_analysis (
-                video_id, analysis_timestamp, metrics_date,
-                revenue, clicks, sales, views,
-                conversion_rate, revenue_per_click, revenue_per_1k_views,
-                conversion_drivers, underperformance_reasons, recommendations
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO conversion_analysis (
+                    video_id, analysis_timestamp, metrics_date,
+                    revenue, clicks, sales, views,
+                    conversion_rate, revenue_per_click, revenue_per_1k_views,
+                    conversion_drivers, underperformance_reasons, recommendations
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                ON CONFLICT (video_id, analysis_timestamp) DO UPDATE SET
+                    metrics_date = EXCLUDED.metrics_date,
+                    revenue = EXCLUDED.revenue,
+                    clicks = EXCLUDED.clicks,
+                    sales = EXCLUDED.sales,
+                    views = EXCLUDED.views,
+                    conversion_rate = EXCLUDED.conversion_rate,
+                    revenue_per_click = EXCLUDED.revenue_per_click,
+                    revenue_per_1k_views = EXCLUDED.revenue_per_1k_views,
+                    conversion_drivers = EXCLUDED.conversion_drivers,
+                    underperformance_reasons = EXCLUDED.underperformance_reasons,
+                    recommendations = EXCLUDED.recommendations
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO conversion_analysis (
+                    video_id, analysis_timestamp, metrics_date,
+                    revenue, clicks, sales, views,
+                    conversion_rate, revenue_per_click, revenue_per_1k_views,
+                    conversion_drivers, underperformance_reasons, recommendations
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                """
+
+            cursor.execute(query, (
                 analysis.video_id,
                 analysis.analysis_timestamp.isoformat(),
                 analysis.metrics_date.isoformat() if analysis.metrics_date else None,
@@ -429,19 +567,12 @@ class LocalDBService:
     def get_script_analysis(self, video_id: str) -> Optional[ScriptAnalysis]:
         """Fetch latest script analysis for a video."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            row = self._execute_query("""
             SELECT * FROM script_analysis
             WHERE video_id = ?
             ORDER BY analysis_timestamp DESC
             LIMIT 1
-            """, (video_id,))
-
-            row = cursor.fetchone()
-            conn.close()
+            """, (video_id,), fetch='one')
 
             if row:
                 return ScriptAnalysis(
@@ -473,19 +604,12 @@ class LocalDBService:
     def get_affiliate_recommendations(self, video_id: str) -> List[AffiliateRecommendation]:
         """Fetch latest affiliate recommendations for a video."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            rows = self._execute_query("""
             SELECT * FROM affiliate_recommendations
             WHERE video_id = ?
             ORDER BY recommendation_timestamp DESC, product_rank ASC
             LIMIT 5
-            """, (video_id,))
-
-            rows = cursor.fetchall()
-            conn.close()
+            """, (video_id,), fetch='all')
 
             recommendations = []
             for row in rows:
@@ -513,38 +637,21 @@ class LocalDBService:
     def get_description_analysis(self, video_id: str) -> Optional[DescriptionAnalysis]:
         """Fetch latest description analysis for a video."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            row = self._execute_query("""
             SELECT * FROM description_analysis
             WHERE video_id = ?
             ORDER BY analysis_timestamp DESC
             LIMIT 1
-            """, (video_id,))
-
-            row = cursor.fetchone()
-            conn.close()
+            """, (video_id,), fetch='one')
 
             if row:
                 # Handle new YT Analytics columns that may not exist in older records
-                yt_total_views = 0
-                yt_total_impressions = 0
-                yt_overall_ctr = 0.0
-                yt_by_traffic_source = []
-                main_keyword = ""
-                silo = ""
-
-                try:
-                    yt_total_views = row['yt_total_views'] or 0
-                    yt_total_impressions = row['yt_total_impressions'] or 0
-                    yt_overall_ctr = row['yt_overall_ctr'] or 0.0
-                    yt_by_traffic_source = json.loads(row['yt_by_traffic_source']) if row['yt_by_traffic_source'] else []
-                    main_keyword = row['main_keyword'] or ""
-                    silo = row['silo'] or ""
-                except (KeyError, IndexError):
-                    pass
+                yt_total_views = row.get('yt_total_views', 0) or 0
+                yt_total_impressions = row.get('yt_total_impressions', 0) or 0
+                yt_overall_ctr = row.get('yt_overall_ctr', 0.0) or 0.0
+                yt_by_traffic_source = json.loads(row['yt_by_traffic_source']) if row.get('yt_by_traffic_source') else []
+                main_keyword = row.get('main_keyword', '') or ''
+                silo = row.get('silo', '') or ''
 
                 return DescriptionAnalysis(
                     video_id=row['video_id'],
@@ -575,19 +682,12 @@ class LocalDBService:
     def get_conversion_analysis(self, video_id: str) -> Optional[ConversionAnalysis]:
         """Fetch latest conversion analysis for a video."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            row = self._execute_query("""
             SELECT * FROM conversion_analysis
             WHERE video_id = ?
             ORDER BY analysis_timestamp DESC
             LIMIT 1
-            """, (video_id,))
-
-            row = cursor.fetchone()
-            conn.close()
+            """, (video_id,), fetch='one')
 
             if row:
                 return ConversionAnalysis(
@@ -614,15 +714,16 @@ class LocalDBService:
     def has_analysis(self, video_id: str) -> bool:
         """Check if a video has any analysis results."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
-            cursor.execute("""
-            SELECT 1 FROM script_analysis WHERE video_id = ?
+            cursor.execute(f"""
+            SELECT 1 FROM script_analysis WHERE video_id = {p}
             UNION
-            SELECT 1 FROM description_analysis WHERE video_id = ?
+            SELECT 1 FROM description_analysis WHERE video_id = {p}
             UNION
-            SELECT 1 FROM conversion_analysis WHERE video_id = ?
+            SELECT 1 FROM conversion_analysis WHERE video_id = {p}
             LIMIT 1
             """, (video_id, video_id, video_id))
 
@@ -643,58 +744,81 @@ class LocalDBService:
                         frame_interval: int = None, frame_analysis: list = None,
                         emotions: dict = None, description: str = None,
                         content_insights: dict = None) -> bool:
-        """Store video transcript, frame analysis, emotion data, description, and content insights.
-        If existing data exists, it will be archived to history table first."""
+        """Store video transcript, frame analysis, emotion data, description, and content insights."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
             now = datetime.now().isoformat()
 
             # Check if data already exists and archive it
-            cursor.execute("SELECT * FROM video_transcripts WHERE video_id = ?", (video_id,))
+            cursor.execute(f"SELECT * FROM video_transcripts WHERE video_id = {p}", (video_id,))
             existing = cursor.fetchone()
+
+            if existing:
+                # Get column names for existing row
+                if self.use_postgres:
+                    columns = [desc[0] for desc in cursor.description]
+                    existing = dict(zip(columns, existing))
+                else:
+                    import sqlite3
+                    existing = dict(existing) if hasattr(existing, 'keys') else None
+                    if not existing:
+                        # Re-fetch with row factory
+                        conn.close()
+                        conn = self._get_connection()
+                        if not self.use_postgres:
+                            import sqlite3
+                            conn.row_factory = sqlite3.Row
+                        cursor = conn.cursor()
+                        cursor.execute(f"SELECT * FROM video_transcripts WHERE video_id = {p}", (video_id,))
+                        existing = cursor.fetchone()
+                        if existing:
+                            existing = dict(existing)
 
             if existing:
                 # Archive old data to history table
                 logger.info(f"Archiving existing transcript data for video {video_id}")
-                cursor.execute("""
+                cursor.execute(f"""
                 INSERT INTO video_transcripts_history (
                     video_id, title, channel, duration_seconds, transcript,
                     word_count, provider, segments, frames_json, frame_count,
                     frame_interval_seconds, frame_analysis, emotions, description,
                     content_insights, original_transcribed_at, archived_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
                 """, (
-                    existing['video_id'],
-                    existing['title'],
-                    existing['channel'],
-                    existing['duration_seconds'],
-                    existing['transcript'],
-                    existing['word_count'],
-                    existing['provider'],
-                    existing['segments'],
-                    existing['frames_json'],
-                    existing['frame_count'],
-                    existing['frame_interval_seconds'],
-                    existing['frame_analysis'] if 'frame_analysis' in existing.keys() else None,
-                    existing['emotions'] if 'emotions' in existing.keys() else None,
-                    existing['description'] if 'description' in existing.keys() else None,
-                    existing['content_insights'] if 'content_insights' in existing.keys() else None,
-                    existing['transcribed_at'],
+                    existing.get('video_id'),
+                    existing.get('title'),
+                    existing.get('channel'),
+                    existing.get('duration_seconds'),
+                    existing.get('transcript'),
+                    existing.get('word_count'),
+                    existing.get('provider'),
+                    existing.get('segments'),
+                    existing.get('frames_json'),
+                    existing.get('frame_count'),
+                    existing.get('frame_interval_seconds'),
+                    existing.get('frame_analysis'),
+                    existing.get('emotions'),
+                    existing.get('description'),
+                    existing.get('content_insights'),
+                    existing.get('transcribed_at'),
                     now
                 ))
                 logger.info(f"Archived transcript to history for video {video_id}")
 
-            # Now insert/replace the new data
-            cursor.execute("""
-            INSERT OR REPLACE INTO video_transcripts (
+            # Delete existing record if any (for clean insert)
+            cursor.execute(f"DELETE FROM video_transcripts WHERE video_id = {p}", (video_id,))
+
+            # Insert new data
+            cursor.execute(f"""
+            INSERT INTO video_transcripts (
                 video_id, title, channel, duration_seconds, transcript,
                 word_count, provider, segments, frames_json, frame_count,
                 frame_interval_seconds, frame_analysis, emotions, description,
                 content_insights, transcribed_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
             """, (
                 video_id,
                 title,
@@ -729,16 +853,9 @@ class LocalDBService:
     def get_transcript(self, video_id: str) -> Optional[dict]:
         """Get transcript for a video."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            row = self._execute_query("""
             SELECT * FROM video_transcripts WHERE video_id = ?
-            """, (video_id,))
-
-            row = cursor.fetchone()
-            conn.close()
+            """, (video_id,), fetch='one')
 
             if row:
                 result = {
@@ -749,34 +866,17 @@ class LocalDBService:
                     'transcript': row['transcript'],
                     'word_count': row['word_count'],
                     'provider': row['provider'],
-                    'segments': json.loads(row['segments']) if row['segments'] else None,
-                    'frames': json.loads(row['frames_json']) if row['frames_json'] else None,
-                    'frame_count': row['frame_count'],
-                    'frame_interval_seconds': row['frame_interval_seconds'],
+                    'segments': json.loads(row['segments']) if row.get('segments') else None,
+                    'frames': json.loads(row['frames_json']) if row.get('frames_json') else None,
+                    'frame_count': row.get('frame_count', 0),
+                    'frame_interval_seconds': row.get('frame_interval_seconds'),
                     'transcribed_at': row['transcribed_at'],
-                    'updated_at': row['updated_at']
+                    'updated_at': row.get('updated_at'),
+                    'frame_analysis': json.loads(row['frame_analysis']) if row.get('frame_analysis') else None,
+                    'emotions': json.loads(row['emotions']) if row.get('emotions') else None,
+                    'description': row.get('description'),
+                    'content_insights': json.loads(row['content_insights']) if row.get('content_insights') else None
                 }
-                # Add new fields if they exist in the database
-                try:
-                    result['frame_analysis'] = json.loads(row['frame_analysis']) if row['frame_analysis'] else None
-                    result['emotions'] = json.loads(row['emotions']) if row['emotions'] else None
-                except (KeyError, IndexError):
-                    # Columns may not exist in older databases
-                    result['frame_analysis'] = None
-                    result['emotions'] = None
-
-                # Add description field
-                try:
-                    result['description'] = row['description']
-                except (KeyError, IndexError):
-                    result['description'] = None
-
-                # Add content_insights field (multimodal AI analysis)
-                try:
-                    result['content_insights'] = json.loads(row['content_insights']) if row['content_insights'] else None
-                except (KeyError, IndexError):
-                    result['content_insights'] = None
-
                 return result
             return None
 
@@ -787,12 +887,12 @@ class LocalDBService:
     def has_transcript(self, video_id: str) -> bool:
         """Check if a video has a stored transcript."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1 FROM video_transcripts WHERE video_id = ?", (video_id,))
-            result = cursor.fetchone()
-            conn.close()
-            return result is not None
+            row = self._execute_query(
+                "SELECT 1 FROM video_transcripts WHERE video_id = ?",
+                (video_id,),
+                fetch='one'
+            )
+            return row is not None
         except Exception as e:
             logger.error(f"Error checking transcript: {str(e)}")
             return False
@@ -800,11 +900,10 @@ class LocalDBService:
     def delete_transcript(self, video_id: str) -> bool:
         """Delete transcript for a video (for re-transcription)."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM video_transcripts WHERE video_id = ?", (video_id,))
-            conn.commit()
-            conn.close()
+            self._execute_query(
+                "DELETE FROM video_transcripts WHERE video_id = ?",
+                (video_id,)
+            )
             logger.info(f"Deleted transcript for video {video_id}")
             return True
         except Exception as e:
@@ -814,22 +913,15 @@ class LocalDBService:
     def get_all_transcripts(self, limit: int = 50) -> list:
         """Get all stored transcripts (for history view)."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            rows = self._execute_query(f"""
             SELECT video_id, title, channel, duration_seconds, word_count,
                    provider, frame_count, transcribed_at
             FROM video_transcripts
             ORDER BY transcribed_at DESC
             LIMIT ?
-            """, (limit,))
+            """, (limit,), fetch='all')
 
-            rows = cursor.fetchall()
-            conn.close()
-
-            return [dict(row) for row in rows]
+            return rows if rows else []
 
         except Exception as e:
             logger.error(f"Error fetching transcripts: {str(e)}")
@@ -838,11 +930,7 @@ class LocalDBService:
     def get_transcript_history(self, video_id: str, limit: int = 10) -> List[dict]:
         """Get historical transcript data for a video."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            rows = self._execute_query(f"""
             SELECT id, video_id, title, channel, duration_seconds, word_count,
                    provider, frame_count, original_transcribed_at, archived_at,
                    CASE WHEN transcript IS NOT NULL THEN 1 ELSE 0 END as has_transcript,
@@ -853,12 +941,9 @@ class LocalDBService:
             WHERE video_id = ?
             ORDER BY archived_at DESC
             LIMIT ?
-            """, (video_id, limit))
+            """, (video_id, limit), fetch='all')
 
-            rows = cursor.fetchall()
-            conn.close()
-
-            return [dict(row) for row in rows]
+            return rows if rows else []
 
         except Exception as e:
             logger.error(f"Error fetching transcript history: {str(e)}")
@@ -867,16 +952,9 @@ class LocalDBService:
     def get_transcript_history_detail(self, history_id: int) -> Optional[dict]:
         """Get full details of a historical transcript entry."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("""
+            row = self._execute_query("""
             SELECT * FROM video_transcripts_history WHERE id = ?
-            """, (history_id,))
-
-            row = cursor.fetchone()
-            conn.close()
+            """, (history_id,), fetch='one')
 
             if row:
                 result = dict(row)
@@ -901,28 +979,30 @@ class LocalDBService:
     def update_content_insights(self, video_id: str, content_insights: dict) -> bool:
         """Update only the content_insights field for an existing transcript."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
+            p = self._get_placeholder()
 
             now = datetime.now().isoformat()
 
-            cursor.execute("""
+            cursor.execute(f"""
             UPDATE video_transcripts
-            SET content_insights = ?, updated_at = ?
-            WHERE video_id = ?
+            SET content_insights = {p}, updated_at = {p}
+            WHERE video_id = {p}
             """, (
                 json.dumps(content_insights) if content_insights else None,
                 now,
                 video_id
             ))
 
-            if cursor.rowcount == 0:
-                logger.warning(f"No transcript found to update for video {video_id}")
-                conn.close()
-                return False
-
+            rowcount = cursor.rowcount
             conn.commit()
             conn.close()
+
+            if rowcount == 0:
+                logger.warning(f"No transcript found to update for video {video_id}")
+                return False
+
             logger.info(f"Updated content_insights for video {video_id}")
             return True
 
