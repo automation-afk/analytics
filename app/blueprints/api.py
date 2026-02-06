@@ -464,10 +464,17 @@ def transcribe_video():
     if analyze_emotions and not os.getenv('HUME_API_KEY'):
         return jsonify({'error': 'HUME_API_KEY not configured but emotion analysis is enabled'}), 500
 
+    # Check if we have at least one download method available (RapidAPI or yt-dlp)
+    rapidapi_key = os.getenv('RAPIDAPI_KEYS') or os.getenv('RAPIDAPI_KEY')
+    has_ytdlp = False
     try:
         import yt_dlp
+        has_ytdlp = True
     except ImportError:
-        return jsonify({'error': 'yt-dlp not installed. Run: pip install yt-dlp'}), 500
+        pass
+
+    if not rapidapi_key and not has_ytdlp:
+        return jsonify({'error': 'No download method available. Set RAPIDAPI_KEY or install yt-dlp.'}), 500
 
     from app.services.transcription_service import TranscriptionService
     import threading
