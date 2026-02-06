@@ -19,8 +19,22 @@ def detail(video_id):
     is_analyzing = cache.get(f'analyzing_{video_id}') or False
     is_transcribing = cache.get(f'transcribing_{video_id}') or False
 
-    # Get complete analysis results (don't cache if analyzing)
-    analysis = current_app.bigquery.get_latest_analysis(video_id)
+    # Cache key for this video's analysis data
+    cache_key = f'video_detail_{video_id}'
+
+    # Only use cache if no operation is in progress
+    if not is_analyzing and not is_transcribing:
+        cached_analysis = cache.get(cache_key)
+        if cached_analysis:
+            analysis = cached_analysis
+        else:
+            analysis = current_app.bigquery.get_latest_analysis(video_id)
+            if analysis and analysis.video:
+                # Cache for 5 minutes
+                cache.set(cache_key, analysis, timeout=300)
+    else:
+        # Operation in progress - always fetch fresh data
+        analysis = current_app.bigquery.get_latest_analysis(video_id)
 
     if not analysis or not analysis.video:
         flash(f'Video not found: {video_id}', 'error')
@@ -82,7 +96,7 @@ def analyze_single(video_id):
                     analysis_types=['script', 'description', 'affiliate', 'conversion']
                 )
                 # Invalidate cache for this video
-                cache.delete(f'video_{video_id}')
+                cache.delete(f'video_detail_{video_id}')
                 # Clear analyzing flag
                 cache.delete(f'analyzing_{video_id}')
                 logger.info(f'Background analysis completed for {video_id}')

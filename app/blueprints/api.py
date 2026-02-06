@@ -297,6 +297,7 @@ def trigger_analysis():
             with app.app_context():
                 cache.delete(f'analyzing_{video_id}')
                 cache.delete(f'analysis_progress_{video_id}')
+                cache.delete(f'video_detail_{video_id}')  # Invalidate video cache
 
     thread = threading.Thread(target=run_analysis)
     thread.daemon = True
@@ -549,6 +550,7 @@ def transcribe_video():
             with app.app_context():
                 cache.delete(f'transcribing_{video_id}')
                 cache.delete(f'transcribe_progress_{video_id}')
+                cache.delete(f'video_detail_{video_id}')  # Invalidate video cache
 
     thread = threading.Thread(target=run_transcription)
     thread.daemon = True

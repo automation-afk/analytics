@@ -63,25 +63,36 @@ def videos_list():
     # Calculate offset
     offset = (page - 1) * per_page
 
-    # Fetch videos from BigQuery
-    videos = current_app.bigquery.get_videos(
-        limit=per_page,
-        offset=offset,
-        channel_code=channel_code,
-        video_id=video_id,
-        has_analysis=has_analysis
-    )
+    # Create cache key for this specific query
+    cache_key = f'videos_list_{page}_{channel_code}_{video_id}_{has_analysis}'
+    cached_videos = cache.get(cache_key)
+
+    if cached_videos is not None:
+        videos = cached_videos
+    else:
+        # Fetch videos from BigQuery
+        videos = current_app.bigquery.get_videos(
+            limit=per_page,
+            offset=offset,
+            channel_code=channel_code,
+            video_id=video_id,
+            has_analysis=has_analysis
+        )
+        # Cache for 2 minutes
+        cache.set(cache_key, videos, timeout=120)
 
     # Check which videos are currently being analyzed
     analyzing_videos = {}
     for video in videos:
         analyzing_videos[video.video_id] = cache.get(f'analyzing_{video.video_id}') or False
 
-    # Get all available channels for dropdown
-    all_channels = current_app.bigquery.get_all_channels()
+    # Get all available channels for dropdown (cached for 10 minutes)
+    all_channels = cache.get('all_channels')
+    if all_channels is None:
+        all_channels = current_app.bigquery.get_all_channels()
+        cache.set('all_channels', all_channels, timeout=600)
 
     # Get total count for pagination (simplified)
-    # Note: In production, you'd want a separate count query
     has_more = len(videos) == per_page
 
     return render_template(
