@@ -25,11 +25,23 @@ class LocalDBService:
             db_path: Path to SQLite database file (defaults to web_app/data/analysis.db)
         """
         if db_path is None:
-            # Default to data/analysis.db in web_app directory
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            data_dir = os.path.join(base_dir, 'data')
-            os.makedirs(data_dir, exist_ok=True)
-            db_path = os.path.join(data_dir, 'analysis.db')
+            # Check for environment variable first (for Railway/production)
+            db_path = os.getenv('DATABASE_PATH')
+
+            if db_path is None:
+                # Default to data/analysis.db in app directory
+                # Use /app/data for Railway, local path for development
+                if os.path.exists('/app'):
+                    # Running on Railway/Docker
+                    data_dir = '/app/data'
+                else:
+                    # Local development
+                    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    data_dir = os.path.join(base_dir, 'data')
+
+                os.makedirs(data_dir, exist_ok=True)
+                db_path = os.path.join(data_dir, 'analysis.db')
+                logger.info(f"Using database path: {db_path}")
 
         self.db_path = db_path
         self._init_database()
