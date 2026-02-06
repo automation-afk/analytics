@@ -48,8 +48,9 @@ class ProductionConfig(Config):
     """Production configuration."""
     DEBUG = False
     TESTING = False
-    CACHE_TYPE = 'redis'  # Use Redis in production
-    CACHE_REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    # Use simple cache by default, redis if REDIS_URL is set
+    CACHE_TYPE = os.getenv('CACHE_TYPE', 'simple')
+    CACHE_REDIS_URL = os.getenv('REDIS_URL')
 
 
 class TestingConfig(Config):
