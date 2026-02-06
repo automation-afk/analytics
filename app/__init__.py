@@ -2,6 +2,7 @@
 import logging
 import os
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config
 from app.extensions import cache
 
@@ -20,6 +21,10 @@ def create_app(config_name='development'):
 
     # Load configuration
     app.config.from_object(config[config_name])
+
+    # Fix for running behind reverse proxy (Railway, Render, etc.)
+    # This ensures Flask generates https:// URLs when behind a proxy
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     # Initialize extensions
     cache.init_app(app)
