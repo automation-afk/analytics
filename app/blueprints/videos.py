@@ -22,19 +22,27 @@ def detail(video_id):
     # Cache key for this video's analysis data
     cache_key = f'video_detail_{video_id}'
 
-    # Only use cache if no operation is in progress
-    if not is_analyzing and not is_transcribing:
+    # Allow force refresh with ?refresh=1
+    force_refresh = request.args.get('refresh') == '1'
+    if force_refresh:
+        cache.delete(cache_key)
+
+    # Only use cache if no operation is in progress and not forcing refresh
+    if not is_analyzing and not is_transcribing and not force_refresh:
         cached_analysis = cache.get(cache_key)
         if cached_analysis:
             analysis = cached_analysis
         else:
             analysis = current_app.bigquery.get_latest_analysis(video_id)
             if analysis and analysis.video:
-                # Cache for 5 minutes
-                cache.set(cache_key, analysis, timeout=300)
+                # Cache for 2 minutes (reduced from 5)
+                cache.set(cache_key, analysis, timeout=120)
     else:
-        # Operation in progress - always fetch fresh data
+        # Operation in progress or force refresh - always fetch fresh data
         analysis = current_app.bigquery.get_latest_analysis(video_id)
+        # Update cache with fresh data
+        if analysis and analysis.video and not is_analyzing and not is_transcribing:
+            cache.set(cache_key, analysis, timeout=120)
 
     if not analysis or not analysis.video:
         flash(f'Video not found: {video_id}', 'error')

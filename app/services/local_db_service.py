@@ -265,7 +265,6 @@ class LocalDBService:
         if self.use_postgres:
             # PostgreSQL uses %s instead of ?
             query = query.replace('?', '%s')
-            conn.row_factory = None
             cursor = conn.cursor()
         else:
             import sqlite3
