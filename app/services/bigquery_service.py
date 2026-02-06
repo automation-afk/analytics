@@ -745,9 +745,9 @@ class BigQueryService:
                 'avg_conversion_rate': 0.0
             }
 
-        import sqlite3
         try:
-            conn = sqlite3.connect(self.local_db.db_path)
+            # Use the local_db service's connection method (supports both SQLite and PostgreSQL)
+            conn = self.local_db._get_connection()
             cursor = conn.cursor()
 
             # Get script analysis stats
@@ -784,6 +784,8 @@ class BigQueryService:
                 }
         except Exception as e:
             logger.error(f"Error getting local analysis stats: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
 
         return {
             'analyzed_videos': 0,
