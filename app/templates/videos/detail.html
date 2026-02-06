@@ -867,29 +867,77 @@
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title" id="reanalyzeModalLabel">
-                    <i class="fas fa-brain me-2"></i>Confirm Re-Analysis
+                    <i class="fas fa-brain me-2"></i>{% if script_analysis or description_analysis or affiliate_recs or conversion_analysis %}Re-Analyze Video{% else %}Analyze Video{% endif %}
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="text-center mb-3">
-                    <i class="fas fa-chart-line text-primary" style="font-size: 3rem;"></i>
+                {% if script_analysis or description_analysis or affiliate_recs or conversion_analysis %}
+                <div class="alert alert-secondary mb-3 py-2">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Existing data:</strong>
+                    {% if script_analysis %}<span class="badge bg-success ms-1">Script</span>{% endif %}
+                    {% if description_analysis %}<span class="badge bg-info ms-1">Description</span>{% endif %}
+                    {% if affiliate_recs %}<span class="badge bg-warning text-dark ms-1">Affiliate</span>{% endif %}
+                    {% if conversion_analysis %}<span class="badge bg-primary ms-1">Conversion</span>{% endif %}
                 </div>
-                <p class="text-center mb-3">Run AI analysis on this video?</p>
+                {% endif %}
 
-                <div class="card bg-light mb-3">
-                    <div class="card-body py-2">
-                        <h6 class="card-title mb-2"><i class="fas fa-list-check text-success me-2"></i>This will analyze:</h6>
-                        <ul class="mb-0 small">
-                            <li>Script quality & persuasion techniques</li>
-                            <li>Description optimization & SEO</li>
-                            <li>Affiliate product recommendations</li>
-                            <li>Conversion drivers & insights</li>
-                        </ul>
+                <p class="text-muted mb-3">Select which analysis types to run (at least 1 required):</p>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input analysis-checkbox" type="checkbox" id="enableScript" {% if not script_analysis %}checked{% endif %}>
+                        <label class="form-check-label" for="enableScript">
+                            <i class="fas fa-file-alt text-success me-1"></i> Script quality & persuasion techniques
+                            {% if script_analysis %}
+                            <span class="badge bg-secondary ms-1">exists</span>
+                            {% endif %}
+                        </label>
                     </div>
+                    <small class="text-muted ms-4">Analyze hook effectiveness, pacing, and persuasion</small>
                 </div>
 
-                <div class="text-center">
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input analysis-checkbox" type="checkbox" id="enableDescription" {% if not description_analysis %}checked{% endif %}>
+                        <label class="form-check-label" for="enableDescription">
+                            <i class="fas fa-align-left text-info me-1"></i> Description optimization & SEO
+                            {% if description_analysis %}
+                            <span class="badge bg-secondary ms-1">exists</span>
+                            {% endif %}
+                        </label>
+                    </div>
+                    <small class="text-muted ms-4">Evaluate keywords, links, and call-to-actions</small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input analysis-checkbox" type="checkbox" id="enableAffiliate" {% if not affiliate_recs %}checked{% endif %}>
+                        <label class="form-check-label" for="enableAffiliate">
+                            <i class="fas fa-shopping-cart text-warning me-1"></i> Affiliate product recommendations
+                            {% if affiliate_recs %}
+                            <span class="badge bg-secondary ms-1">exists</span>
+                            {% endif %}
+                        </label>
+                    </div>
+                    <small class="text-muted ms-4">Suggest relevant affiliate products to promote</small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input analysis-checkbox" type="checkbox" id="enableConversion" {% if not conversion_analysis %}checked{% endif %}>
+                        <label class="form-check-label" for="enableConversion">
+                            <i class="fas fa-chart-line text-primary me-1"></i> Conversion drivers & insights
+                            {% if conversion_analysis %}
+                            <span class="badge bg-secondary ms-1">exists</span>
+                            {% endif %}
+                        </label>
+                    </div>
+                    <small class="text-muted ms-4">Identify what drives viewer engagement and action</small>
+                </div>
+
+                <div class="text-center mt-3">
                     <div class="p-2 bg-info bg-opacity-10 rounded d-inline-block">
                         <i class="fas fa-clock text-info me-2"></i>
                         <span class="small text-muted">Estimated Time:</span>
@@ -1532,6 +1580,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Re-analyze modal confirm button click
     const confirmReanalyzeBtn = document.getElementById('confirmReanalyzeBtn');
     confirmReanalyzeBtn.addEventListener('click', function() {
+        // Get selected analysis types from checkboxes
+        const analysisTypes = [];
+        if (document.getElementById('enableScript').checked) analysisTypes.push('script');
+        if (document.getElementById('enableDescription').checked) analysisTypes.push('description');
+        if (document.getElementById('enableAffiliate').checked) analysisTypes.push('affiliate');
+        if (document.getElementById('enableConversion').checked) analysisTypes.push('conversion');
+
+        // Validate at least one selected
+        if (analysisTypes.length === 0) {
+            alert('Please select at least one analysis type.');
+            return;
+        }
+
         // Close the modal
         const reanalyzeModal = bootstrap.Modal.getInstance(document.getElementById('reanalyzeModal'));
         reanalyzeModal.hide();
@@ -1550,24 +1611,29 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisPercent.textContent = '0%';
         updateStatusBarPositions();
 
-        // Reset step icons
+        // Reset step icons - show only selected types
         ['script', 'description', 'affiliate', 'conversion'].forEach(s => {
             const stepEl = document.getElementById('analysisStep-' + s);
             if (stepEl) {
-                stepEl.querySelector('i').className = 'fas fa-circle';
+                if (analysisTypes.includes(s)) {
+                    stepEl.style.display = 'inline';
+                    stepEl.querySelector('i').className = 'fas fa-circle';
+                } else {
+                    stepEl.style.display = 'none';
+                }
             }
         });
 
         // Disable button
         reanalyzeBtn.disabled = true;
 
-        // Start analysis
+        // Start analysis with selected types
         fetch('/api/v1/analysis/trigger', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 video_id: videoId,
-                analysis_types: ['script', 'description', 'affiliate', 'conversion']
+                analysis_types: analysisTypes
             })
         })
         .then(response => response.json())
