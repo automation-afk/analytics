@@ -234,6 +234,11 @@ def trigger_analysis():
     if not video_id:
         return jsonify({'error': 'video_id is required'}), 400
 
+    # Log analysis start
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_start_analysis(email, video_id, analysis_types)
+
     # Check if already analyzing
     if cache.get(f'analyzing_{video_id}'):
         return jsonify({
