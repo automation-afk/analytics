@@ -2,8 +2,9 @@
 import os
 import logging
 import subprocess
+import requests
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 import tempfile
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,9 @@ class TranscriptionService:
     Service for transcribing YouTube videos with optional:
     - Frame extraction + AI analysis (Analyze & Discard approach)
     - Voice emotion analysis (Hume AI)
+
+    Uses RapidAPI for YouTube downloads (works on Railway/production)
+    Falls back to yt-dlp for local development
     """
 
     def __init__(
@@ -21,12 +25,14 @@ class TranscriptionService:
         groq_api_key: str = None,
         openai_api_key: str = None,
         anthropic_api_key: str = None,
-        hume_api_key: str = None
+        hume_api_key: str = None,
+        rapidapi_key: str = None
     ):
         self.groq_api_key = groq_api_key or os.getenv('GROQ_API_KEY')
         self.openai_api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
         self.anthropic_api_key = anthropic_api_key or os.getenv('ANTHROPIC_API_KEY')
         self.hume_api_key = hume_api_key or os.getenv('HUME_API_KEY')
+        self.rapidapi_key = rapidapi_key or os.getenv('RAPIDAPI_KEY')
 
         # Initialize multimodal analyzer if Anthropic key is available
         self.multimodal_analyzer = None
@@ -37,6 +43,12 @@ class TranscriptionService:
 
         if not self.groq_api_key and not self.openai_api_key:
             logger.warning("No transcription API keys configured")
+
+        # Check download method availability
+        if self.rapidapi_key:
+            logger.info("RapidAPI key configured - will use for YouTube downloads")
+        else:
+            logger.warning("No RapidAPI key - will try yt-dlp (may not work on production)")
 
     def transcribe_video(
         self,
@@ -79,11 +91,6 @@ class TranscriptionService:
                     progress_callback(step, progress, message)
                 except Exception as e:
                     logger.warning(f"Progress callback error: {e}")
-        try:
-            import yt_dlp
-        except ImportError:
-            logger.error("yt-dlp not installed")
-            return None
 
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         should_extract_frames = analyze_frames and frame_interval is not None
@@ -116,11 +123,30 @@ class TranscriptionService:
                 if needs_download:
                     update_progress('download', 2, 'Initializing download...')
 
+                    # Try RapidAPI first (works on production), then yt-dlp (local fallback)
+                    download_urls = None
+                    if self.rapidapi_key:
+                        update_progress('download', 3, 'Fetching download URLs from RapidAPI...')
+                        download_urls = self._get_rapidapi_urls(video_id)
+                        if download_urls:
+                            info = download_urls.get('info', info)
+                            logger.info(f"Got RapidAPI URLs for {video_id}")
+
                     # Download video if extracting frames
                     if should_extract_frames:
                         logger.info(f"Downloading video for frame extraction: {video_id}")
                         update_progress('download', 5, 'Downloading video for frame extraction...')
-                        video_path, video_info = self._download_video(video_url, temp_path)
+
+                        if download_urls and download_urls.get('video_url'):
+                            video_path = self._download_from_url(
+                                download_urls['video_url'],
+                                temp_path / f"{video_id}.mp4",
+                                'video'
+                            )
+                            video_info = info
+                        else:
+                            # Fallback to yt-dlp
+                            video_path, video_info = self._download_video_ytdlp(video_url, temp_path)
 
                         if video_path and video_path.exists():
                             logger.info(f"Extracting frames every {frame_interval}s")
@@ -144,7 +170,17 @@ class TranscriptionService:
                     if (generate_transcript or analyze_emotions) and (not audio_path or not audio_path.exists()):
                         logger.info(f"Downloading audio: {video_id}")
                         update_progress('download', 5, 'Downloading audio...')
-                        audio_path, audio_info = self._download_audio(video_url, temp_path)
+
+                        if download_urls and download_urls.get('audio_url'):
+                            audio_path = self._download_from_url(
+                                download_urls['audio_url'],
+                                temp_path / f"{video_id}_audio.m4a",
+                                'audio'
+                            )
+                            audio_info = info
+                        else:
+                            # Fallback to yt-dlp
+                            audio_path, audio_info = self._download_audio_ytdlp(video_url, temp_path)
 
                     info = video_info or audio_info or info
 
@@ -223,20 +259,113 @@ class TranscriptionService:
                 logger.error(traceback.format_exc())
                 return None
 
-    def _download_video(self, video_url: str, output_path: Path) -> tuple:
-        """Download video from YouTube with real progress tracking."""
-        import yt_dlp
+    def _get_rapidapi_urls(self, video_id: str) -> Optional[Dict]:
+        """
+        Get video/audio download URLs from RapidAPI (YouTube Media Downloader).
+        Returns both URLs in a single API call (1 request = 1 video).
+        """
+        if not self.rapidapi_key:
+            return None
+
+        url = "https://youtube-media-downloader.p.rapidapi.com/v2/video/details"
+        headers = {
+            "x-rapidapi-key": self.rapidapi_key,
+            "x-rapidapi-host": "youtube-media-downloader.p.rapidapi.com"
+        }
+        params = {"videoId": video_id}
+
+        try:
+            logger.info(f"Fetching RapidAPI URLs for video: {video_id}")
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+
+            if response.status_code != 200:
+                logger.error(f"RapidAPI error: {response.status_code} - {response.text[:200]}")
+                return None
+
+            data = response.json()
+
+            # Get best audio URL (prefer m4a for compatibility with Whisper)
+            audio_url = None
+            audios = data.get('audios', {}).get('items', [])
+            for audio in audios:
+                if audio.get('extension') in ['m4a', 'mp3']:
+                    audio_url = audio.get('url')
+                    break
+            if not audio_url and audios:
+                audio_url = audios[0].get('url')
+
+            # Get best video URL (720p or lower for reasonable file size)
+            video_url = None
+            videos = data.get('videos', {}).get('items', [])
+            for video in videos:
+                quality = video.get('quality', '')
+                if '720' in quality or '480' in quality or '360' in quality:
+                    video_url = video.get('url')
+                    break
+            if not video_url and videos:
+                video_url = videos[0].get('url')
+
+            return {
+                'audio_url': audio_url,
+                'video_url': video_url,
+                'info': {
+                    'title': data.get('title'),
+                    'channel': data.get('channel', {}).get('name'),
+                    'description': data.get('description'),
+                    'duration': data.get('lengthSeconds')
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"RapidAPI request error: {str(e)}")
+            return None
+
+    def _download_from_url(self, url: str, output_path: Path, media_type: str = 'audio') -> Optional[Path]:
+        """Download file from direct URL (from RapidAPI)."""
+        try:
+            logger.info(f"Downloading {media_type} from URL...")
+            response = requests.get(url, timeout=300, stream=True)
+
+            if response.status_code != 200:
+                logger.error(f"Download failed: {response.status_code}")
+                return None
+
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0 and self._progress_callback:
+                            pct = downloaded / total_size
+                            progress = int(5 + (pct * 13))  # 5-18% range
+                            self._progress_callback('download', progress, f'Downloading {media_type}... {pct*100:.0f}%')
+
+            logger.info(f"Downloaded {media_type} to: {output_path} ({output_path.stat().st_size / 1024 / 1024:.2f} MB)")
+            return output_path
+
+        except Exception as e:
+            logger.error(f"Download error: {str(e)}")
+            return None
+
+    def _download_video_ytdlp(self, video_url: str, output_path: Path) -> Tuple[Optional[Path], Optional[Dict]]:
+        """Download video from YouTube using yt-dlp (fallback for local development)."""
+        try:
+            import yt_dlp
+        except ImportError:
+            logger.error("yt-dlp not installed and RapidAPI not available")
+            return None, None
 
         def progress_hook(d):
             """Track download progress and report via callback."""
             if d['status'] == 'downloading':
                 if self._progress_callback:
-                    # Calculate real download progress (5-20% range for download step)
                     downloaded = d.get('downloaded_bytes', 0)
                     total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
                     if total > 0:
                         pct = downloaded / total
-                        # Map 0-100% download to 5-18% overall progress
                         progress = int(5 + (pct * 13))
                         speed = d.get('speed', 0)
                         speed_str = f"{speed/1024/1024:.1f} MB/s" if speed else ""
@@ -268,23 +397,25 @@ class TranscriptionService:
 
                 return video_file, info
         except Exception as e:
-            logger.error(f"Video download error: {str(e)}")
+            logger.error(f"yt-dlp video download error: {str(e)}")
             return None, None
 
-    def _download_audio(self, video_url: str, output_path: Path) -> tuple:
-        """Download audio from YouTube with real progress tracking."""
-        import yt_dlp
+    def _download_audio_ytdlp(self, video_url: str, output_path: Path) -> Tuple[Optional[Path], Optional[Dict]]:
+        """Download audio from YouTube using yt-dlp (fallback for local development)."""
+        try:
+            import yt_dlp
+        except ImportError:
+            logger.error("yt-dlp not installed and RapidAPI not available")
+            return None, None
 
         def progress_hook(d):
             """Track download progress and report via callback."""
             if d['status'] == 'downloading':
                 if self._progress_callback:
-                    # Calculate real download progress (5-18% range for download step)
                     downloaded = d.get('downloaded_bytes', 0)
                     total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
                     if total > 0:
                         pct = downloaded / total
-                        # Map 0-100% download to 5-18% overall progress
                         progress = int(5 + (pct * 13))
                         speed = d.get('speed', 0)
                         speed_str = f"{speed/1024/1024:.1f} MB/s" if speed else ""
@@ -313,7 +444,7 @@ class TranscriptionService:
                 audio_file = output_path / f"{video_id}_audio.mp3"
                 return audio_file, info
         except Exception as e:
-            logger.error(f"Audio download error: {str(e)}")
+            logger.error(f"yt-dlp audio download error: {str(e)}")
             return None, None
 
     def _extract_audio_from_video(self, video_path: Path, output_path: Path) -> Optional[Path]:
@@ -335,6 +466,9 @@ class TranscriptionService:
             return audio_file
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else e}")
+            return None
+        except FileNotFoundError:
+            logger.error("FFmpeg not found - cannot extract audio from video")
             return None
 
     def _extract_frames(self, video_path: Path, output_dir: Path, interval_seconds: int) -> tuple:
