@@ -792,7 +792,7 @@
 </div>
 
 <!-- Fixed Status Bar for Transcription Progress -->
-<div id="transcriptionStatusBar" class="fixed-bottom bg-dark text-white py-2 px-3 shadow-lg" style="display: none; z-index: 1050;">
+<div id="transcriptionStatusBar" class="fixed-bottom bg-dark text-white py-2 px-3 shadow-lg" style="display: none; z-index: 1050; transition: bottom 0.3s ease;">
     <div class="container-fluid">
         <div class="row align-items-center">
             <div class="col-auto">
@@ -1298,7 +1298,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close status bar button
     statusCloseBtn.addEventListener('click', function() {
         statusBar.style.display = 'none';
+        updateStatusBarPositions();
     });
+
+    // Function to stack status bars when both are visible
+    function updateStatusBarPositions() {
+        const transcriptionVisible = statusBar.style.display !== 'none';
+        const analysisVisible = analysisStatusBar.style.display !== 'none';
+
+        if (transcriptionVisible && analysisVisible) {
+            // Stack transcription bar above analysis bar
+            statusBar.style.bottom = '60px';
+        } else {
+            statusBar.style.bottom = '0';
+        }
+    }
 
     // Start analysis
     startBtn.addEventListener('click', function() {
@@ -1332,6 +1346,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusText.textContent = 'Starting...';
         statusProgressBar.style.width = '0%';
         statusPercent.textContent = '0%';
+        updateStatusBarPositions();
 
         // Show/hide relevant steps in status bar
         const needsDownload = withTranscript || withEmotions || withFrames;
@@ -1479,6 +1494,13 @@ document.addEventListener('DOMContentLoaded', function() {
         statusProgressBar.style.width = '100%';
         statusPercent.textContent = '100%';
         statusProgressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+        // Mark all steps as complete
+        ['download', 'frames', 'transcribe', 'emotions', 'insights', 'save'].forEach(s => {
+            const stepEl = document.getElementById('statusStep-' + s);
+            if (stepEl && stepEl.style.display !== 'none') {
+                stepEl.querySelector('i').className = 'fas fa-check-circle text-success';
+            }
+        });
     }
 
     function showStatusError(message) {
@@ -1504,6 +1526,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close analysis status bar
     analysisCloseBtn.addEventListener('click', function() {
         analysisStatusBar.style.display = 'none';
+        updateStatusBarPositions();
     });
 
     // Re-analyze modal confirm button click
@@ -1525,6 +1548,7 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisStatusText.textContent = 'Starting analysis...';
         analysisProgressBar.style.width = '0%';
         analysisPercent.textContent = '0%';
+        updateStatusBarPositions();
 
         // Reset step icons
         ['script', 'description', 'affiliate', 'conversion'].forEach(s => {
@@ -1650,6 +1674,48 @@ document.addEventListener('DOMContentLoaded', function() {
         startBtn.style.display = 'inline-block';
         cancelBtn.textContent = 'Cancel';
     });
+
+    // ==================== ON PAGE LOAD: RESUME IN-PROGRESS OPERATIONS ====================
+    // Check if operations are in progress (for persistence across refresh/navigation)
+    const isTranscribingOnLoad = {{ 'true' if is_transcribing else 'false' }};
+    const isAnalyzingOnLoad = {{ 'true' if is_analyzing else 'false' }};
+
+    if (isTranscribingOnLoad) {
+        // Resume transcription status bar
+        statusBar.style.display = 'block';
+        statusSpinner.style.display = 'inline-block';
+        statusCheck.style.display = 'none';
+        statusErrorIcon.style.display = 'none';
+        statusCloseBtn.style.display = 'none';
+        statusText.textContent = 'Transcription in progress...';
+        // Show all possible steps (we don't know which were selected)
+        document.getElementById('statusStep-download').style.display = 'inline';
+        document.getElementById('statusStep-transcribe').style.display = 'inline';
+        document.getElementById('statusStep-save').style.display = 'inline';
+        // Disable the transcribe button
+        document.querySelector('[data-bs-target="#transcribeModal"]').disabled = true;
+        // Start polling
+        pollStatusBar(true, false, false, false);
+    }
+
+    if (isAnalyzingOnLoad) {
+        // Resume analysis status bar
+        analysisStatusBar.style.display = 'block';
+        analysisSpinner.style.display = 'inline-block';
+        analysisCheck.style.display = 'none';
+        analysisErrorIcon.style.display = 'none';
+        analysisCloseBtn.style.display = 'none';
+        analysisStatusText.textContent = 'Analysis in progress...';
+        // Disable the re-analyze button
+        reanalyzeBtn.disabled = true;
+        // Start polling
+        pollAnalysisStatus();
+    }
+
+    // Update positions if both are visible on load
+    if (isTranscribingOnLoad || isAnalyzingOnLoad) {
+        updateStatusBarPositions();
+    }
 
 });
 </script>
