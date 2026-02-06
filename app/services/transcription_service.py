@@ -533,11 +533,22 @@ class TranscriptionService:
         frames_dir = output_dir / f"{video_path.stem}_frames"
         frames_dir.mkdir(exist_ok=True)
 
+        logger.info(f"Opening video file: {video_path} (size: {video_path.stat().st_size / 1024 / 1024:.2f} MB)")
         cap = cv2.VideoCapture(str(video_path))
+
+        if not cap.isOpened():
+            logger.error(f"OpenCV could not open video file: {video_path}")
+            return [], []
+
         fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count_total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        logger.info(f"Video properties: {width}x{height}, {fps:.2f} FPS, {frame_count_total} frames")
 
         if fps <= 0:
-            logger.warning("Could not determine video FPS")
+            logger.warning(f"Invalid video FPS: {fps}")
+            cap.release()
             return [], []
 
         frames = []
