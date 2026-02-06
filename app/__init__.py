@@ -93,10 +93,21 @@ def create_app(config_name='development'):
         except (ValueError, TypeError):
             return value
 
-    # Health check endpoint
+    # Health check endpoint (fast, for Railway health checks)
     @app.route('/health')
     def health_check():
         return {"status": "healthy", "service": "YouTube Analytics Dashboard"}
+
+    # Warmup endpoint (pre-warms BigQuery connection)
+    @app.route('/warmup')
+    def warmup():
+        """Pre-warm the app by initializing connections."""
+        try:
+            # Test BigQuery connection
+            app.bigquery.get_channel_overview() if hasattr(app, 'bigquery') else None
+            return {"status": "warmed", "bigquery": "connected"}
+        except Exception as e:
+            return {"status": "partial", "error": str(e)}, 200
 
     logging.info(f"Flask app created with config: {config_name}")
     return app

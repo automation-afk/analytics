@@ -1,5 +1,6 @@
 """Flask application configuration."""
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Load environment variables from .env.web
@@ -11,6 +12,12 @@ class Config:
 
     # Flask settings
     SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+
+    # Session settings - prevent stale sessions
+    SESSION_COOKIE_SECURE = True  # Only send over HTTPS in production
+    SESSION_COOKIE_HTTPONLY = True  # Prevent JS access
+    SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=8)  # Session expires after 8 hours
 
     # BigQuery settings
     BIGQUERY_PROJECT_ID = os.getenv('BIGQUERY_PROJECT_ID', 'company-wide-370010')
@@ -42,6 +49,7 @@ class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
     TESTING = False
+    SESSION_COOKIE_SECURE = False  # Allow HTTP in development
 
 
 class ProductionConfig(Config):
