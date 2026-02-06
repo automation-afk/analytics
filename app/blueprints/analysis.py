@@ -143,12 +143,14 @@ def history():
     if email and current_app.activity_logger:
         current_app.activity_logger.log_view_history(email)
 
-    import sqlite3
+    # Get analysis history from local database (supports both SQLite and PostgreSQL)
+    conn = current_app.local_db._get_connection()
 
-    # Get analysis history from local database
-    db_path = current_app.local_db.db_path
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    # Set row factory for SQLite to get dict-like access
+    if not current_app.local_db.use_postgres:
+        import sqlite3
+        conn.row_factory = sqlite3.Row
+
     cursor = conn.cursor()
 
     # Get recent analyses
@@ -165,14 +167,33 @@ def history():
     """)
 
     analyses = []
-    for row in cursor.fetchall():
-        analyses.append({
-            'video_id': row['video_id'],
-            'timestamp': row['analysis_timestamp'],
-            'script_score': row['script_quality_score'],
-            'hook_score': row['hook_effectiveness_score'],
-            'cta_score': row['call_to_action_score']
-        })
+    rows = cursor.fetchall()
+
+    # Handle both SQLite (Row objects) and PostgreSQL (tuples)
+    if rows:
+        if current_app.local_db.use_postgres:
+            # PostgreSQL returns tuples - map by column order
+            columns = ['video_id', 'analysis_timestamp', 'script_quality_score',
+                      'hook_effectiveness_score', 'call_to_action_score']
+            for row in rows:
+                row_dict = dict(zip(columns, row))
+                analyses.append({
+                    'video_id': row_dict['video_id'],
+                    'timestamp': row_dict['analysis_timestamp'],
+                    'script_score': row_dict['script_quality_score'],
+                    'hook_score': row_dict['hook_effectiveness_score'],
+                    'cta_score': row_dict['call_to_action_score']
+                })
+        else:
+            # SQLite with row_factory returns dict-like Row objects
+            for row in rows:
+                analyses.append({
+                    'video_id': row['video_id'],
+                    'timestamp': row['analysis_timestamp'],
+                    'script_score': row['script_quality_score'],
+                    'hook_score': row['hook_effectiveness_score'],
+                    'cta_score': row['call_to_action_score']
+                })
 
     conn.close()
 
