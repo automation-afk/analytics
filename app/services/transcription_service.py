@@ -32,7 +32,12 @@ class TranscriptionService:
         self.openai_api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
         self.anthropic_api_key = anthropic_api_key or os.getenv('ANTHROPIC_API_KEY')
         self.hume_api_key = hume_api_key or os.getenv('HUME_API_KEY')
-        self.rapidapi_key = rapidapi_key or os.getenv('RAPIDAPI_KEY')
+
+        # Support multiple RapidAPI keys (comma-separated) for higher request limits
+        # Format: RAPIDAPI_KEY=key1,key2,key3 or RAPIDAPI_KEYS=key1,key2,key3
+        rapidapi_keys_str = rapidapi_key or os.getenv('RAPIDAPI_KEYS') or os.getenv('RAPIDAPI_KEY') or ''
+        self.rapidapi_keys = [k.strip() for k in rapidapi_keys_str.split(',') if k.strip()]
+        self._rapidapi_key_index = 0  # Current key index for rotation
 
         # Initialize multimodal analyzer if Anthropic key is available
         self.multimodal_analyzer = None
@@ -45,8 +50,8 @@ class TranscriptionService:
             logger.warning("No transcription API keys configured")
 
         # Check download method availability
-        if self.rapidapi_key:
-            logger.info("RapidAPI key configured - will use for YouTube downloads")
+        if self.rapidapi_keys:
+            logger.info(f"RapidAPI configured with {len(self.rapidapi_keys)} key(s) - will use for YouTube downloads")
         else:
             logger.warning("No RapidAPI key - will try yt-dlp (may not work on production)")
 
@@ -125,7 +130,7 @@ class TranscriptionService:
 
                     # Try RapidAPI first (works on production), then yt-dlp (local fallback)
                     download_urls = None
-                    if self.rapidapi_key:
+                    if self.rapidapi_keys:
                         update_progress('download', 3, 'Fetching download URLs from RapidAPI...')
                         download_urls = self._get_rapidapi_urls(video_id)
                         if download_urls:
@@ -263,62 +268,87 @@ class TranscriptionService:
         """
         Get video/audio download URLs from RapidAPI (YouTube Media Downloader).
         Returns both URLs in a single API call (1 request = 1 video).
+        Supports multiple API keys with automatic rotation on rate limit.
         """
-        if not self.rapidapi_key:
+        if not self.rapidapi_keys:
             return None
 
         url = "https://youtube-media-downloader.p.rapidapi.com/v2/video/details"
-        headers = {
-            "x-rapidapi-key": self.rapidapi_key,
-            "x-rapidapi-host": "youtube-media-downloader.p.rapidapi.com"
-        }
         params = {"videoId": video_id}
 
-        try:
-            logger.info(f"Fetching RapidAPI URLs for video: {video_id}")
-            response = requests.get(url, headers=headers, params=params, timeout=30)
-
-            if response.status_code != 200:
-                logger.error(f"RapidAPI error: {response.status_code} - {response.text[:200]}")
-                return None
-
-            data = response.json()
-
-            # Get best audio URL (prefer m4a for compatibility with Whisper)
-            audio_url = None
-            audios = data.get('audios', {}).get('items', [])
-            for audio in audios:
-                if audio.get('extension') in ['m4a', 'mp3']:
-                    audio_url = audio.get('url')
-                    break
-            if not audio_url and audios:
-                audio_url = audios[0].get('url')
-
-            # Get best video URL (720p or lower for reasonable file size)
-            video_url = None
-            videos = data.get('videos', {}).get('items', [])
-            for video in videos:
-                quality = video.get('quality', '')
-                if '720' in quality or '480' in quality or '360' in quality:
-                    video_url = video.get('url')
-                    break
-            if not video_url and videos:
-                video_url = videos[0].get('url')
-
-            return {
-                'audio_url': audio_url,
-                'video_url': video_url,
-                'info': {
-                    'title': data.get('title'),
-                    'channel': data.get('channel', {}).get('name'),
-                    'description': data.get('description'),
-                    'duration': data.get('lengthSeconds')
-                }
+        # Try each API key until one works
+        attempts = len(self.rapidapi_keys)
+        for attempt in range(attempts):
+            current_key = self.rapidapi_keys[self._rapidapi_key_index]
+            headers = {
+                "x-rapidapi-key": current_key,
+                "x-rapidapi-host": "youtube-media-downloader.p.rapidapi.com"
             }
 
-        except Exception as e:
-            logger.error(f"RapidAPI request error: {str(e)}")
-            return None
+            try:
+                logger.info(f"Fetching RapidAPI URLs for video: {video_id} (key {self._rapidapi_key_index + 1}/{len(self.rapidapi_keys)})")
+                response = requests.get(url, headers=headers, params=params, timeout=30)
+
+                # Check for rate limit or quota exceeded
+                if response.status_code == 429 or response.status_code == 403:
+                    logger.warning(f"RapidAPI key {self._rapidapi_key_index + 1} rate limited, rotating to next key...")
+                    self._rapidapi_key_index = (self._rapidapi_key_index + 1) % len(self.rapidapi_keys)
+                    continue
+
+                if response.status_code != 200:
+                    logger.error(f"RapidAPI error: {response.status_code} - {response.text[:200]}")
+                    return None
+
+                data = response.json()
+
+                # Check for quota error in response body
+                if data.get('message') and 'quota' in data.get('message', '').lower():
+                    logger.warning(f"RapidAPI key {self._rapidapi_key_index + 1} quota exceeded, rotating...")
+                    self._rapidapi_key_index = (self._rapidapi_key_index + 1) % len(self.rapidapi_keys)
+                    continue
+
+                # Get best audio URL (prefer m4a for compatibility with Whisper)
+                audio_url = None
+                audios = data.get('audios', {}).get('items', [])
+                for audio in audios:
+                    if audio.get('extension') in ['m4a', 'mp3']:
+                        audio_url = audio.get('url')
+                        break
+                if not audio_url and audios:
+                    audio_url = audios[0].get('url')
+
+                # Get best video URL (720p or lower for reasonable file size)
+                video_url = None
+                videos = data.get('videos', {}).get('items', [])
+                for video in videos:
+                    quality = video.get('quality', '')
+                    if '720' in quality or '480' in quality or '360' in quality:
+                        video_url = video.get('url')
+                        break
+                if not video_url and videos:
+                    video_url = videos[0].get('url')
+
+                # Rotate to next key for next request (load balancing)
+                self._rapidapi_key_index = (self._rapidapi_key_index + 1) % len(self.rapidapi_keys)
+
+                return {
+                    'audio_url': audio_url,
+                    'video_url': video_url,
+                    'info': {
+                        'title': data.get('title'),
+                        'channel': data.get('channel', {}).get('name'),
+                        'description': data.get('description'),
+                        'duration': data.get('lengthSeconds')
+                    }
+                }
+
+            except Exception as e:
+                logger.error(f"RapidAPI request error with key {self._rapidapi_key_index + 1}: {str(e)}")
+                self._rapidapi_key_index = (self._rapidapi_key_index + 1) % len(self.rapidapi_keys)
+                continue
+
+        logger.error("All RapidAPI keys exhausted or failed")
+        return None
 
     def _download_from_url(self, url: str, output_path: Path, media_type: str = 'audio') -> Optional[Path]:
         """Download file from direct URL (from RapidAPI)."""
