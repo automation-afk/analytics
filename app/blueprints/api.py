@@ -175,29 +175,34 @@ def get_dashboard_stats():
 def get_analysis_status():
     """
     Check if any analyses are currently running.
+    Uses a separate cache key to track analyzing videos (no BigQuery calls).
 
     Returns:
         {
             "is_analyzing": true/false,
             "videos_analyzing": [
-                {"video_id": "...", "title": "..."},
+                {"video_id": "...", "title": "...", "progress": ..., "message": ...},
                 ...
             ]
         }
     """
-    # Check all videos in cache for analyzing flag
+    # Get list of analyzing videos from cache (no BigQuery!)
+    analyzing_list = cache.get('analyzing_videos_list') or []
+
+    # Filter to only those still marked as analyzing
     videos_analyzing = []
-
-    # Get more videos to increase chance of finding analyzing ones
-    recent_videos = current_app.bigquery.get_videos(limit=200)
-
-    for video in recent_videos:
-        is_analyzing = cache.get(f'analyzing_{video.video_id}')
-        if is_analyzing:
+    for video_info in analyzing_list:
+        video_id = video_info.get('video_id')
+        if cache.get(f'analyzing_{video_id}'):
+            # Add progress info if available
+            progress_data = cache.get(f'analysis_progress_{video_id}') or {}
             videos_analyzing.append({
-                'video_id': video.video_id,
-                'title': video.title,
-                'channel_code': video.channel_code
+                'video_id': video_id,
+                'title': video_info.get('title', ''),
+                'channel_code': video_info.get('channel_code', ''),
+                'progress': progress_data.get('progress', 0),
+                'message': progress_data.get('message', 'Analyzing...'),
+                'step': progress_data.get('step', '')
             })
 
     return jsonify({
@@ -244,6 +249,22 @@ def trigger_analysis():
         'progress': 0,
         'message': 'Starting analysis...'
     }, timeout=600)
+
+    # Get video info and add to analyzing list (for status polling without BigQuery)
+    video_info = {'video_id': video_id, 'title': '', 'channel_code': ''}
+    try:
+        analysis = current_app.bigquery.get_latest_analysis(video_id)
+        if analysis and analysis.video:
+            video_info['title'] = analysis.video.title
+            video_info['channel_code'] = analysis.video.channel_code
+    except:
+        pass
+
+    analyzing_list = cache.get('analyzing_videos_list') or []
+    # Remove if already in list, then add fresh
+    analyzing_list = [v for v in analyzing_list if v.get('video_id') != video_id]
+    analyzing_list.append(video_info)
+    cache.set('analyzing_videos_list', analyzing_list, timeout=700)  # Slightly longer than analysis timeout
 
     app = current_app._get_current_object()
 
@@ -482,6 +503,23 @@ def transcribe_video():
 
     cache.set(f'transcribing_{video_id}', True, timeout=900)
     cache.set(f'transcribe_progress_{video_id}', {'step': 'download', 'progress': 0, 'message': 'Starting...'}, timeout=900)
+
+    # Get video info and add to transcribing list (for status polling without BigQuery)
+    video_info = {'video_id': video_id, 'title': '', 'channel_code': ''}
+    try:
+        analysis = current_app.bigquery.get_latest_analysis(video_id)
+        if analysis and analysis.video:
+            video_info['title'] = analysis.video.title
+            video_info['channel_code'] = analysis.video.channel_code
+    except:
+        pass
+
+    transcribing_list = cache.get('transcribing_videos_list') or []
+    # Remove if already in list, then add fresh
+    transcribing_list = [v for v in transcribing_list if v.get('video_id') != video_id]
+    transcribing_list.append(video_info)
+    cache.set('transcribing_videos_list', transcribing_list, timeout=1000)
+
     app = current_app._get_current_object()
 
     def run_transcription():
@@ -709,6 +747,7 @@ def get_transcribe_status(video_id):
 def get_all_transcribe_status():
     """
     Check if any transcriptions are currently running.
+    Uses a separate cache key to track transcribing videos (no BigQuery calls).
 
     Returns:
         {
@@ -719,19 +758,19 @@ def get_all_transcribe_status():
             ]
         }
     """
+    # Get list of transcribing videos from cache (no BigQuery!)
+    transcribing_list = cache.get('transcribing_videos_list') or []
+
+    # Filter to only those still marked as transcribing
     videos_transcribing = []
-
-    # Get recent videos to check for transcribing status
-    recent_videos = current_app.bigquery.get_videos(limit=200)
-
-    for video in recent_videos:
-        is_transcribing = cache.get(f'transcribing_{video.video_id}')
-        if is_transcribing:
-            progress_data = cache.get(f'transcribe_progress_{video.video_id}') or {}
+    for video_info in transcribing_list:
+        video_id = video_info.get('video_id')
+        if cache.get(f'transcribing_{video_id}'):
+            progress_data = cache.get(f'transcribe_progress_{video_id}') or {}
             videos_transcribing.append({
-                'video_id': video.video_id,
-                'title': video.title,
-                'channel_code': video.channel_code,
+                'video_id': video_id,
+                'title': video_info.get('title', ''),
+                'channel_code': video_info.get('channel_code', ''),
                 'progress': progress_data.get('progress', 0),
                 'step': progress_data.get('step', 'download'),
                 'message': progress_data.get('message', 'Processing...')
