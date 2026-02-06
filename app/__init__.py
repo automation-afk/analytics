@@ -47,9 +47,9 @@ def create_app(config_name='development'):
         local_db=app.local_db  # Pass local_db for analysis results
     )
 
-    # Initialize Google Sheets logging service (for activity tracking)
-    from app.services.sheets_logging_service import SheetsLoggingService
-    app.activity_logger = SheetsLoggingService(
+    # Initialize analytics service
+    from app.services.analytics_service import AnalyticsService
+    app.activity_logger = AnalyticsService(
         credentials_path=app.config['GOOGLE_CREDENTIALS_PATH']
     )
 

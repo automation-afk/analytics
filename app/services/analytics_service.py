@@ -1,4 +1,4 @@
-"""Google Sheets logging service for tracking user activity."""
+"""Analytics service for tracking user activity."""
 import logging
 import os
 import json
@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 PH_TZ = pytz.timezone('Asia/Manila')
 
 
-class SheetsLoggingService:
-    """Service for logging user activity to Google Sheets."""
+class AnalyticsService:
+    """Service for tracking user activity."""
 
     def __init__(self, credentials_path: str = None, spreadsheet_id: str = None):
         """
-        Initialize Google Sheets client.
+        Initialize analytics client.
 
         Args:
             credentials_path: Path to Google Cloud service account JSON file
-            spreadsheet_id: Google Sheets spreadsheet ID
+            spreadsheet_id: Target spreadsheet ID
         """
         self.spreadsheet_id = spreadsheet_id or os.getenv(
             'LOGGING_SPREADSHEET_ID',
@@ -38,7 +38,7 @@ class SheetsLoggingService:
             credentials_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
 
             if credentials_json:
-                logger.info("Loading Sheets credentials from GOOGLE_CREDENTIALS_JSON")
+                logger.info("Loading credentials from GOOGLE_CREDENTIALS_JSON")
                 credentials_info = json.loads(credentials_json)
                 credentials = service_account.Credentials.from_service_account_info(
                     credentials_info,
@@ -47,7 +47,7 @@ class SheetsLoggingService:
                     ],
                 )
             elif credentials_path and os.path.exists(credentials_path):
-                logger.info(f"Loading Sheets credentials from file: {credentials_path}")
+                logger.info(f"Loading credentials from file: {credentials_path}")
                 credentials = service_account.Credentials.from_service_account_file(
                     credentials_path,
                     scopes=[
@@ -55,17 +55,17 @@ class SheetsLoggingService:
                     ],
                 )
             else:
-                logger.warning("No credentials available for Google Sheets logging")
+                logger.warning("No credentials available for analytics service")
                 return
 
             self.service = build('sheets', 'v4', credentials=credentials)
-            logger.info(f"Google Sheets logging service initialized for spreadsheet: {self.spreadsheet_id}")
+            logger.info(f"Analytics service initialized")
 
             # Ensure header row exists
             self._ensure_header()
 
         except Exception as e:
-            logger.error(f"Failed to initialize Sheets logging service: {str(e)}")
+            logger.error(f"Failed to initialize analytics service: {str(e)}")
             self.service = None
 
     def _ensure_header(self):
@@ -92,7 +92,7 @@ class SheetsLoggingService:
                         'values': [['Date', 'Time (PH)', 'Email', 'Action', 'Details']]
                     }
                 ).execute()
-                logger.info("Created header row in logs sheet")
+                logger.info("Created header row")
 
         except HttpError as e:
             if e.resp.status == 404:
@@ -104,7 +104,7 @@ class SheetsLoggingService:
 
     def log_action(self, email: str, action: str, details: str = None):
         """
-        Log a user action to Google Sheets.
+        Log a user action.
 
         Args:
             email: User's email address
@@ -112,7 +112,7 @@ class SheetsLoggingService:
             details: Additional details about the action
         """
         if not self.service:
-            logger.debug(f"Sheets logging disabled. Would log: {email} - {action}")
+            logger.debug(f"Analytics disabled. Would log: {email} - {action}")
             return
 
         try:
@@ -138,7 +138,7 @@ class SheetsLoggingService:
             logger.debug(f"Logged action: {email} - {action}")
 
         except HttpError as e:
-            logger.error(f"Failed to log action to Sheets: {str(e)}")
+            logger.error(f"Failed to log action: {str(e)}")
         except Exception as e:
             logger.error(f"Error logging action: {str(e)}")
 

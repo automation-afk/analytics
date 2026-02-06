@@ -9,7 +9,7 @@ google-cloud-bigquery>=3.13.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 
-# Google Sheets API (for activity logging)
+# Google APIs
 google-api-python-client>=2.100.0
 pytz>=2024.1
 

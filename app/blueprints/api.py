@@ -919,13 +919,13 @@ def regenerate_insights(video_id):
         }), 500
 
 
-# ==================== CLIENT-SIDE ACTIVITY LOGGING ====================
+# ==================== CLIENT-SIDE ACTIVITY TRACKING ====================
 
 @bp.route('/log-activity', methods=['POST'])
 @login_required
 def log_client_activity():
     """
-    Log client-side user activity to Google Sheets.
+    Log client-side user activity.
 
     Request body:
         {
