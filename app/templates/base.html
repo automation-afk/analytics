@@ -279,6 +279,9 @@
             htmlElement.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
             updateDarkModeIcon(newTheme);
+
+            // Log theme change
+            logActivity('Toggle Theme', 'theme=' + newTheme);
         });
 
         function updateDarkModeIcon(theme) {
@@ -290,6 +293,115 @@
                 darkModeIcon.classList.add('fa-moon');
             }
         }
+    </script>
+
+    <!-- Activity Tracking -->
+    <script>
+        // Function to log activity to server
+        function logActivity(action, details) {
+            fetch('/api/v1/log-activity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action, details: details || '' })
+            }).catch(err => console.debug('Activity log failed:', err));
+        }
+
+        // Track navigation clicks
+        document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
+            link.addEventListener('click', function() {
+                const pageName = this.textContent.trim();
+                logActivity('Navigate', 'page=' + pageName);
+            });
+        });
+
+        // Track YouTube external links
+        document.addEventListener('click', function(e) {
+            const link = e.target.closest('a[href*="youtube.com"], a[href*="youtu.be"]');
+            if (link) {
+                const videoId = link.href.match(/(?:v=|youtu\.be\/)([^&\?]+)/);
+                logActivity('Watch on YouTube', 'url=' + link.href + (videoId ? ', video_id=' + videoId[1] : ''));
+            }
+        });
+
+        // Track tab switches (Bootstrap tabs)
+        document.addEventListener('shown.bs.tab', function(e) {
+            const tabName = e.target.textContent.trim() || e.target.getAttribute('data-bs-target');
+            logActivity('Switch Tab', 'tab=' + tabName);
+        });
+
+        // Track modal opens
+        document.addEventListener('shown.bs.modal', function(e) {
+            const modalId = e.target.id;
+            const modalTitle = e.target.querySelector('.modal-title')?.textContent?.trim() || modalId;
+            logActivity('Open Modal', 'modal=' + modalTitle);
+        });
+
+        // Track modal closes (including progress bar close)
+        document.addEventListener('hidden.bs.modal', function(e) {
+            const modalId = e.target.id;
+            const modalTitle = e.target.querySelector('.modal-title')?.textContent?.trim() || modalId;
+            logActivity('Close Modal', 'modal=' + modalTitle);
+        });
+
+        // Track button clicks with specific data attributes or classes
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('button, .btn');
+            if (!btn) return;
+
+            // Skip if it's a nav link or already tracked
+            if (btn.closest('.navbar-nav')) return;
+
+            // Get button context
+            let action = '';
+            let details = '';
+
+            // Check for specific buttons
+            if (btn.id === 'statusCloseBtn' || btn.id === 'analysisCloseBtn') {
+                action = 'Close Progress Bar';
+                details = btn.id === 'statusCloseBtn' ? 'transcription' : 'analysis';
+            } else if (btn.id === 'reanalyzeBtn' || btn.classList.contains('reanalyze-btn')) {
+                action = 'Click Re-Analyze';
+            } else if (btn.id === 'confirmReanalyzeBtn') {
+                action = 'Confirm Re-Analyze';
+            } else if (btn.id === 'startBtn' || btn.classList.contains('start-transcribe')) {
+                action = 'Click Start Transcribe';
+            } else if (btn.dataset.bsTarget === '#transcribeModal') {
+                action = 'Open Transcribe Modal';
+            } else if (btn.dataset.bsTarget === '#reanalyzeModal') {
+                action = 'Open Re-Analyze Modal';
+            } else if (btn.classList.contains('btn-primary') || btn.classList.contains('btn-success')) {
+                // Generic action button
+                const btnText = btn.textContent.trim().substring(0, 30);
+                if (btnText) {
+                    action = 'Click Button';
+                    details = 'text=' + btnText;
+                }
+            }
+
+            if (action) {
+                logActivity(action, details);
+            }
+        });
+
+        // Track filter form submissions
+        document.addEventListener('submit', function(e) {
+            const form = e.target;
+            if (form.closest('.card') && form.querySelector('[name="channel"], [name="video_id"], [name="has_analysis"]')) {
+                logActivity('Apply Filters', 'form submitted');
+            }
+        });
+
+        // Track dropdown changes (channel filter, etc.)
+        document.addEventListener('change', function(e) {
+            const select = e.target;
+            if (select.tagName === 'SELECT') {
+                const name = select.name || select.id;
+                const value = select.value;
+                if (name && (name.includes('channel') || name.includes('analysis'))) {
+                    logActivity('Change Filter', name + '=' + value);
+                }
+            }
+        });
     </script>
 
     {% block extra_js %}{% endblock %}

@@ -917,3 +917,31 @@ def regenerate_insights(video_id):
             'status': 'error',
             'message': f'Analysis failed: {str(e)[:200]}'
         }), 500
+
+
+# ==================== CLIENT-SIDE ACTIVITY LOGGING ====================
+
+@bp.route('/log-activity', methods=['POST'])
+@login_required
+def log_client_activity():
+    """
+    Log client-side user activity to Google Sheets.
+
+    Request body:
+        {
+            "action": "Click Watch on YouTube",
+            "details": "video_id=abc123"
+        }
+
+    Returns:
+        {"status": "logged"}
+    """
+    data = request.get_json()
+    action = data.get('action', 'Unknown Action')
+    details = data.get('details', '')
+
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_action(email, action, details)
+
+    return jsonify({'status': 'logged'})
