@@ -819,7 +819,7 @@
                 </div>
             </div>
             <div class="col-auto">
-                <button type="button" class="btn btn-sm btn-outline-light" id="statusCloseBtn" style="display: none;">
+                <button type="button" class="btn btn-sm btn-outline-light" id="statusCloseBtn">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -853,7 +853,7 @@
                 </div>
             </div>
             <div class="col-auto">
-                <button type="button" class="btn btn-sm btn-outline-light" id="analysisCloseBtn" style="display: none;">
+                <button type="button" class="btn btn-sm btn-outline-light" id="analysisCloseBtn">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -1342,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusSpinner.style.display = 'inline-block';
         statusCheck.style.display = 'none';
         statusErrorIcon.style.display = 'none';
-        statusCloseBtn.style.display = 'none';
+        // statusCloseBtn always visible
         statusText.textContent = 'Starting...';
         statusProgressBar.style.width = '0%';
         statusPercent.textContent = '0%';
@@ -1508,7 +1508,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusCheck.style.display = 'none';
         statusErrorIcon.style.display = 'inline-block';
         statusText.textContent = message || 'Error occurred';
-        statusCloseBtn.style.display = 'inline-block';
+        // statusCloseBtn already visible
         document.querySelector('[data-bs-target="#transcribeModal"]').disabled = false;
     }
 
@@ -1544,7 +1544,7 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisSpinner.style.display = 'inline-block';
         analysisCheck.style.display = 'none';
         analysisErrorIcon.style.display = 'none';
-        analysisCloseBtn.style.display = 'none';
+        // analysisCloseBtn always visible
         analysisStatusText.textContent = 'Starting analysis...';
         analysisProgressBar.style.width = '0%';
         analysisPercent.textContent = '0%';
@@ -1659,7 +1659,7 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisCheck.style.display = 'none';
         analysisErrorIcon.style.display = 'inline-block';
         analysisStatusText.textContent = message || 'Error occurred';
-        analysisCloseBtn.style.display = 'inline-block';
+        // analysisCloseBtn already visible
         reanalyzeBtn.disabled = false;
     }
 
@@ -1686,7 +1686,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusSpinner.style.display = 'inline-block';
         statusCheck.style.display = 'none';
         statusErrorIcon.style.display = 'none';
-        statusCloseBtn.style.display = 'none';
+        // statusCloseBtn always visible
         statusText.textContent = 'Transcription in progress...';
         // Show all possible steps (we don't know which were selected)
         document.getElementById('statusStep-download').style.display = 'inline';
@@ -1704,7 +1704,7 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisSpinner.style.display = 'inline-block';
         analysisCheck.style.display = 'none';
         analysisErrorIcon.style.display = 'none';
-        analysisCloseBtn.style.display = 'none';
+        // analysisCloseBtn always visible
         analysisStatusText.textContent = 'Analysis in progress...';
         // Disable the re-analyze button
         reanalyzeBtn.disabled = true;
