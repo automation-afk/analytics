@@ -18,9 +18,8 @@ anthropic>=0.40.0  # Claude API
 openai>=1.12.0     # ChatGPT API
 groq>=0.4.0        # Groq API (fast Whisper transcription)
 
-# YouTube/Media (for local transcription only - not used on production)
-# yt-dlp>=2024.1.0   # YouTube downloader (install locally: pip install yt-dlp)
-# opencv-python>=4.8.0  # Frame extraction (install locally: pip install opencv-python)
+# YouTube/Media
+opencv-python-headless>=4.8.0  # Frame extraction (headless for server)
 
 # Background Job Scheduling
 apscheduler>=3.10.0
