@@ -44,11 +44,11 @@ credentials/
 !cloudbuild.yaml
 flask_redirect_cred.json
 
-# Database
-*.db
+# Database (keep analysis.db for Railway deployment)
 *.sqlite
 *.sqlite3
-data/
+!data/
+!data/analysis.db
 
 # Logs
 *.log
