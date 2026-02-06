@@ -1,10 +1,20 @@
 """Authentication blueprint - Google OAuth-based access control."""
 import os
-from flask import Blueprint, render_template, redirect, url_for, request, session, flash, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, session, flash, current_app, make_response
 from functools import wraps
 from authlib.integrations.flask_client import OAuth
 
 bp = Blueprint('auth', __name__)
+
+
+@bp.after_app_request
+def add_no_cache_headers(response):
+    """Add no-cache headers to prevent browser from caching authenticated pages."""
+    if 'user_email' in session:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, private'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 # Initialize OAuth
 oauth = OAuth()
@@ -116,7 +126,20 @@ def authorize():
 
 @bp.route('/logout')
 def logout():
-    """Logout and clear session."""
+    """Logout and clear session completely."""
+    # Clear all session data
     session.clear()
+
+    # Create response with redirect
+    response = make_response(redirect(url_for('auth.login')))
+
+    # Add no-cache headers to prevent back button showing cached logged-in pages
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, private'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+
+    # Clear session cookie
+    response.delete_cookie('session')
+
     flash('You have been logged out successfully.', 'success')
-    return redirect(url_for('auth.login'))
+    return response
