@@ -81,6 +81,10 @@ def login_google():
 @bp.route('/authorize')
 def authorize():
     """Handle Google OAuth callback."""
+    # If already logged in, skip OAuth flow (prevents double-callback issues)
+    if session.get('user_email'):
+        return redirect(url_for('dashboard.overview'))
+
     try:
         # Get the token from Google
         token = oauth.google.authorize_access_token()
@@ -110,9 +114,12 @@ def authorize():
         session['user_picture'] = user_info.get('picture', '')
         session.permanent = True
 
-        # Log login to Google Sheets
-        if current_app.activity_logger:
-            current_app.activity_logger.log_login(email)
+        # Log login to Google Sheets (don't let logging break login)
+        try:
+            if current_app.activity_logger:
+                current_app.activity_logger.log_login(email)
+        except Exception:
+            current_app.logger.warning(f'Failed to log login for {email}')
 
         flash(f'Welcome, {user_info.get("name", "User")}!', 'success')
 
