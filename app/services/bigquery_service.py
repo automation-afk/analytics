@@ -116,8 +116,8 @@ class BigQueryService:
             params.append(bigquery.ScalarQueryParameter("channel_code", "STRING", f"%{channel_code.upper()}%"))
 
         if video_id:
-            # Case-insensitive partial match for video ID
-            query += " AND UPPER(v.video_id) LIKE @video_id"
+            # Case-insensitive partial match for video ID or title
+            query += " AND (UPPER(v.video_id) LIKE @video_id OR UPPER(v.Video_Title) LIKE @video_id)"
             params.append(bigquery.ScalarQueryParameter("video_id", "STRING", f"%{video_id.upper()}%"))
 
         if start_date:
