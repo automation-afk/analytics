@@ -129,8 +129,12 @@
                                     <tr>
                                         <th>Video</th>
                                         <th>Channel</th>
-                                        <th>Published</th>
-                                        <th>Last Analysis</th>
+                                        <th class="sortable" data-sort-col="2" style="cursor:pointer; user-select:none;">
+                                            Published <i class="fas fa-sort text-muted ms-1"></i>
+                                        </th>
+                                        <th class="sortable" data-sort-col="3" style="cursor:pointer; user-select:none;">
+                                            Last Analysis <i class="fas fa-sort text-muted ms-1"></i>
+                                        </th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -145,8 +149,8 @@
                                         <td>
                                             <span class="badge bg-secondary">{{ video.channel_code }}</span>
                                         </td>
-                                        <td>{{ video.published_date.strftime('%Y-%m-%d') if video.published_date else 'N/A' }}</td>
-                                        <td>
+                                        <td data-sort-value="{{ video.published_date.strftime('%Y-%m-%d') if video.published_date else '0000-00-00' }}">{{ video.published_date.strftime('%Y-%m-%d') if video.published_date else 'N/A' }}</td>
+                                        <td data-sort-value="{{ video.latest_analysis_date.strftime('%Y-%m-%d') if video.latest_analysis_date else '0000-00-00' }}">
                                             {% if video.latest_analysis_date %}
                                                 <span class="badge bg-success">
                                                     <i class="fas fa-check"></i> {{ video.latest_analysis_date.strftime('%Y-%m-%d') }}
@@ -194,4 +198,40 @@
         </div>
     </div>
 </div>
+
+<script>
+    // Column sorting
+    document.querySelectorAll('th.sortable').forEach(function(th) {
+        th.addEventListener('click', function() {
+            const table = th.closest('table');
+            const tbody = table.querySelector('tbody');
+            const colIdx = parseInt(th.dataset.sortCol);
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            // Toggle sort direction
+            const currentDir = th.dataset.sortDir || 'none';
+            const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+            // Reset all sort icons in this table
+            table.querySelectorAll('th.sortable').forEach(function(h) {
+                h.dataset.sortDir = 'none';
+                h.querySelector('i').className = 'fas fa-sort text-muted ms-1';
+            });
+
+            th.dataset.sortDir = newDir;
+            th.querySelector('i').className = newDir === 'asc'
+                ? 'fas fa-sort-up text-primary ms-1'
+                : 'fas fa-sort-down text-primary ms-1';
+
+            rows.sort(function(a, b) {
+                const aVal = a.children[colIdx].dataset.sortValue || a.children[colIdx].textContent.trim();
+                const bVal = b.children[colIdx].dataset.sortValue || b.children[colIdx].textContent.trim();
+                const cmp = aVal.localeCompare(bVal);
+                return newDir === 'asc' ? cmp : -cmp;
+            });
+
+            rows.forEach(function(row) { tbody.appendChild(row); });
+        });
+    });
+</script>
 {% endblock %}
