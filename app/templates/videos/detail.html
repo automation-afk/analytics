@@ -224,7 +224,7 @@
                     <ul class="nav nav-tabs nav-sm mb-3" id="affInlineTab" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active py-1 px-2" id="aff-perf-tab" data-bs-toggle="tab" data-bs-target="#aff-perf" type="button" role="tab">
-                                <i class="fas fa-chart-bar me-1"></i> Real Data <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)"></i>
+                                <i class="fas fa-chart-bar me-1"></i> BigQuery Data <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)"></i>
                                 {% if affiliate_performance %}<span class="badge bg-success ms-1 small">{{ affiliate_performance|length }}</span>{% endif %}
                             </button>
                         </li>
@@ -996,7 +996,7 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="real-performance-tab" data-bs-toggle="tab"
                                 data-bs-target="#real-performance" type="button" role="tab">
-                            <i class="fas fa-chart-bar me-1"></i> Real Performance
+                            <i class="fas fa-chart-bar me-1"></i> BigQuery Data
                             <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)"></i>
                             {% if affiliate_performance %}
                             <span class="badge bg-success ms-1">{{ affiliate_performance|length }}</span>
@@ -1183,7 +1183,7 @@
                     <div class="tab-pane fade" id="ai-suggestions" role="tabpanel">
                         {% if affiliate_recs %}
                             <div class="alert alert-light border mb-3 py-2">
-                                <small><i class="fas fa-robot me-1"></i> These recommendations are <strong>AI-generated estimates</strong> by Claude AI based on video transcript, title, description, and real BigQuery performance data when available. Cross-reference with the Real Performance tab for actual data.</small>
+                                <small><i class="fas fa-robot me-1"></i> These recommendations are <strong>AI-generated estimates</strong> by Claude AI based on video transcript, title, description, and real BigQuery performance data when available. Cross-reference with the BigQuery Data tab for actual data.</small>
                             </div>
                             <div class="list-group list-group-flush">
                                 {% for rec in affiliate_recs[:5] %}
