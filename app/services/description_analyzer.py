@@ -351,8 +351,21 @@ Return ONLY valid JSON, no other text.
             )
 
             response_text = message.content[0].text
+
+            # Strip markdown code blocks if present
+            response_text = response_text.strip()
+            if response_text.startswith('```'):
+                response_text = response_text.split('\n', 1)[1] if '\n' in response_text else response_text[3:]
+                if response_text.endswith('```'):
+                    response_text = response_text.rsplit('```', 1)[0]
+                response_text = response_text.strip()
+
             return json.loads(response_text)
 
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI description analysis JSON: {e}")
+            logger.error(f"Response text: {response_text}")
+            return None
         except Exception as e:
             logger.error(f"Error in AI description analysis: {e}")
             return None

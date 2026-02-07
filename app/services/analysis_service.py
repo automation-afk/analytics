@@ -234,12 +234,18 @@ class AnalysisService:
         if 'affiliate' in analysis_types and transcript:
             update_progress('affiliate', 60, 'Generating affiliate recommendations...')
             try:
+                # Fetch real performance data to inform AI recommendations
+                real_performance = self.bigquery.get_affiliate_performance(video_id)
+                if real_performance:
+                    logger.info(f"Found {len(real_performance)} real tracking IDs to inform recommendations")
+
                 logger.info(f"Running affiliate recommendations for {video_id}")
                 results = self.affiliate_recommender.recommend_products(
                     transcript=transcript,
                     title=video.title,
                     description=video.description,
-                    top_n=5
+                    top_n=5,
+                    affiliate_performance=real_performance
                 )
 
                 # Convert to AffiliateRecommendation models
@@ -263,6 +269,22 @@ class AnalysisService:
                 if affiliate_recommendations:
                     self.bigquery.store_affiliate_recommendations(affiliate_recommendations)
                     logger.info(f"Affiliate recommendations completed and stored for {video_id}")
+
+                    # Compare AI recommendations to existing links in description
+                    if video.description:
+                        try:
+                            from app.services.affiliate_recommender import AffiliateRecommender
+                            comparison = self.affiliate_recommender.compare_recommendations_to_existing(
+                                results, video.description
+                            )
+                            logger.info(
+                                f"Affiliate comparison for {video_id}: "
+                                f"{comparison['already_implemented']} already in description, "
+                                f"{comparison['new_opportunities']} new opportunities"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Affiliate comparison failed: {e}")
+
                     update_progress('affiliate', 75, 'Affiliate recommendations complete')
 
             except Exception as e:

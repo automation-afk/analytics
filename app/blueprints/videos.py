@@ -68,6 +68,8 @@ def detail(video_id):
         affiliate_recs=analysis.affiliate_recommendations,
         description_analysis=analysis.description_analysis,
         conversion_analysis=analysis.conversion_analysis,
+        affiliate_performance=analysis.affiliate_performance,
+        existing_links=analysis.existing_links_analysis,
         transcript_data=transcript_data,
         is_analyzing=is_analyzing,
         is_transcribing=is_transcribing

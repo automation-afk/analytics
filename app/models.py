@@ -1,7 +1,7 @@
 """Data models for YouTube analytics dashboard."""
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -125,6 +125,21 @@ class ConversionAnalysis:
 
 
 @dataclass
+class AffiliatePerformance:
+    """Real affiliate performance data from BigQuery Revenue_Metrics table."""
+    video_id: str
+    tracking_id: str
+    platform: str
+    affiliate: str
+    link_placement: str
+    total_revenue: float = 0.0
+    total_clicks: int = 0
+    total_sales: int = 0
+    conversion_rate: float = 0.0
+    revenue_per_click: float = 0.0
+
+
+@dataclass
 class AnalysisResults:
     """Combined analysis results for a video."""
     video: Video
@@ -133,6 +148,8 @@ class AnalysisResults:
     affiliate_recommendations: List[AffiliateRecommendation] = field(default_factory=list)
     description_analysis: Optional[DescriptionAnalysis] = None
     conversion_analysis: Optional[ConversionAnalysis] = None
+    affiliate_performance: List[AffiliatePerformance] = field(default_factory=list)
+    existing_links_analysis: Optional[Dict] = None
 
 
 @dataclass

@@ -11,7 +11,7 @@ import pandas as pd
 from app.models import (
     Video, RevenueMetrics, VideoTranscript, ScriptAnalysis,
     AffiliateRecommendation, DescriptionAnalysis, ConversionAnalysis,
-    AnalysisResults, DashboardStats
+    AnalysisResults, DashboardStats, AffiliatePerformance
 )
 
 logger = logging.getLogger(__name__)
@@ -584,6 +584,65 @@ class BigQueryService:
         logger.warning(f"Revenue metrics not found for video: {video_id}")
         return None
 
+    def get_affiliate_performance(self, video_id: str) -> list:
+        """
+        Fetch per-tracking-ID affiliate performance for a video.
+
+        Args:
+            video_id: YouTube video ID
+
+        Returns:
+            List of AffiliatePerformance objects sorted by revenue DESC
+        """
+        query = """
+        SELECT
+            video_id,
+            Tracking_Id,
+            Platform,
+            Affiliate,
+            Link_Placement,
+            SUM(revenue) as total_revenue,
+            SUM(clicks) as total_clicks,
+            SUM(sales) as total_sales,
+            SAFE_DIVIDE(SUM(sales), SUM(clicks)) * 100 as conversion_rate,
+            SAFE_DIVIDE(SUM(revenue), SUM(clicks)) as revenue_per_click
+        FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+        WHERE video_id = @video_id
+        GROUP BY video_id, Tracking_Id, Platform, Affiliate, Link_Placement
+        ORDER BY total_revenue DESC
+        """
+
+        try:
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("video_id", "STRING", video_id)
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = query_job.result()
+
+            performance_data = []
+            for row in results:
+                performance_data.append(AffiliatePerformance(
+                    video_id=row.video_id,
+                    tracking_id=row.Tracking_Id or "Unknown",
+                    platform=row.Platform or "Unknown",
+                    affiliate=row.Affiliate or "Unknown",
+                    link_placement=row.Link_Placement or "Unknown",
+                    total_revenue=float(row.total_revenue) if row.total_revenue else 0.0,
+                    total_clicks=int(row.total_clicks) if row.total_clicks else 0,
+                    total_sales=int(row.total_sales) if row.total_sales else 0,
+                    conversion_rate=float(row.conversion_rate) if row.conversion_rate else 0.0,
+                    revenue_per_click=float(row.revenue_per_click) if row.revenue_per_click else 0.0,
+                ))
+
+            logger.info(f"Fetched {len(performance_data)} affiliate tracking IDs for video: {video_id}")
+            return performance_data
+
+        except Exception as e:
+            logger.error(f"Error fetching affiliate performance: {str(e)}")
+            return []
+
     # ============================================================================
     # WRITE OPERATIONS - Analysis Results to Existing Tables
     # ============================================================================
@@ -689,13 +748,31 @@ class BigQueryService:
         # Get conversion analysis
         conversion_analysis = self._get_conversion_analysis(video_id)
 
+        # Get real affiliate performance from BigQuery (no analysis needed)
+        affiliate_performance = self.get_affiliate_performance(video_id)
+
+        # Compute existing links analysis from description (regex only, no AI)
+        # Pass known affiliate names from BigQuery so detection isn't hardcoded
+        existing_links_analysis = None
+        if video.description:
+            try:
+                from app.services.affiliate_recommender import AffiliateRecommender
+                known_affiliates = list({p.affiliate for p in affiliate_performance}) if affiliate_performance else None
+                existing_links_analysis = AffiliateRecommender.analyze_existing_links(
+                    video.description, known_affiliates=known_affiliates
+                )
+            except Exception as e:
+                logger.error(f"Error analyzing existing links: {e}")
+
         return AnalysisResults(
             video=video,
             revenue_metrics=revenue_metrics,
             script_analysis=script_analysis,
             affiliate_recommendations=affiliate_recs,
             description_analysis=description_analysis,
-            conversion_analysis=conversion_analysis
+            conversion_analysis=conversion_analysis,
+            affiliate_performance=affiliate_performance,
+            existing_links_analysis=existing_links_analysis
         )
 
     def _get_script_analysis(self, video_id: str) -> Optional[ScriptAnalysis]:
