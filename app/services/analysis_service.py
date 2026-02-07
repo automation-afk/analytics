@@ -231,7 +231,7 @@ class AnalysisService:
             time.sleep(2)
 
         # 3. Affiliate Product Recommendations
-        if 'affiliate' in analysis_types and transcript:
+        if 'affiliate' in analysis_types and (transcript or video.title or video.description):
             update_progress('affiliate', 60, 'Generating affiliate recommendations...')
             try:
                 # Fetch real performance data to inform AI recommendations
