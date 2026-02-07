@@ -130,10 +130,10 @@
                                         <th>Video</th>
                                         <th>Channel</th>
                                         <th class="sortable" data-sort-col="2" style="cursor:pointer; user-select:none;">
-                                            Published <i class="fas fa-sort text-muted ms-1"></i>
+                                            Published <i class="fas fa-sort ms-1" style="opacity:0.5;"></i>
                                         </th>
                                         <th class="sortable" data-sort-col="3" style="cursor:pointer; user-select:none;">
-                                            Last Analysis <i class="fas fa-sort text-muted ms-1"></i>
+                                            Last Analysis <i class="fas fa-sort ms-1" style="opacity:0.5;"></i>
                                         </th>
                                         <th>Actions</th>
                                     </tr>
@@ -215,13 +215,14 @@
             // Reset all sort icons in this table
             table.querySelectorAll('th.sortable').forEach(function(h) {
                 h.dataset.sortDir = 'none';
-                h.querySelector('i').className = 'fas fa-sort text-muted ms-1';
+                h.querySelector('i').className = 'fas fa-sort ms-1'; h.querySelector('i').style.opacity = '0.5';
             });
 
             th.dataset.sortDir = newDir;
             th.querySelector('i').className = newDir === 'asc'
                 ? 'fas fa-sort-up text-primary ms-1'
                 : 'fas fa-sort-down text-primary ms-1';
+            th.querySelector('i').style.opacity = '1';
 
             rows.sort(function(a, b) {
                 const aVal = a.children[colIdx].dataset.sortValue || a.children[colIdx].textContent.trim();
