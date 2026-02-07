@@ -20,7 +20,6 @@ def index():
 
 @bp.route('/dashboard')
 @login_required
-@cache.cached(timeout=300)  # Cache for 5 minutes
 def overview():
     """
     Main dashboard overview page.
