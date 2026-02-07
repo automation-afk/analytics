@@ -84,7 +84,10 @@
         <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <h6 class="card-title text-muted">Avg Hook Score</h6>
+                    <h6 class="card-title text-muted">Avg Hook Score
+                        <i class="fas fa-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="top"
+                           title="How effectively videos grab attention in the first 30 seconds. Scored 0-10 by AI (Claude) analyzing the script opening."></i>
+                    </h6>
                     <h3 class="text-primary">{{ "%.1f" | format(stats.avg_hook_score) }}/10</h3>
                 </div>
             </div>
@@ -93,7 +96,10 @@
         <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <h6 class="card-title text-muted">Avg CTA Score</h6>
+                    <h6 class="card-title text-muted">Avg CTA Score
+                        <i class="fas fa-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="top"
+                           title="How strong the call-to-action is in driving viewer action. Scored 0-10 by AI (Claude) analyzing script persuasion and CTAs."></i>
+                    </h6>
                     <h3 class="text-success">{{ "%.1f" | format(stats.avg_cta_score) }}/10</h3>
                 </div>
             </div>
@@ -102,7 +108,10 @@
         <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <h6 class="card-title text-muted">Avg Conversion Rate</h6>
+                    <h6 class="card-title text-muted">Avg Conversion Rate
+                        <i class="fas fa-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="top"
+                           title="Average click-to-sale conversion rate from affiliate links. Source: BigQuery revenue data (YT_Affiliate_Revenue)."></i>
+                    </h6>
                     <h3 class="text-info">{{ stats.avg_conversion_rate | format_percent }}</h3>
                 </div>
             </div>
@@ -200,6 +209,11 @@
 </div>
 
 <script>
+    // Initialize Bootstrap tooltips
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el);
+    });
+
     // Column sorting
     document.querySelectorAll('th.sortable').forEach(function(th) {
         th.addEventListener('click', function() {
