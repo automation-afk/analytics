@@ -121,7 +121,8 @@ def authorize():
         except Exception:
             current_app.logger.warning(f'Failed to log login for {email}')
 
-        flash(f'Welcome, {user_info.get("name", "User")}!', 'success')
+        first_name = user_info.get('given_name') or user_info.get('name', 'User').split()[0]
+        flash(f'Welcome, {first_name}!', 'success')
 
         # Redirect to next page or dashboard
         next_page = request.args.get('next')
