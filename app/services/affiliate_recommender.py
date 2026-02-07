@@ -65,7 +65,7 @@ class AffiliateRecommender:
             logger.info(f"Generating {top_n} affiliate product recommendations...")
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=2000,
+                max_tokens=4000,
                 temperature=0.5,  # Slightly higher temperature for creative recommendations
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -73,17 +73,35 @@ class AffiliateRecommender:
             # Parse JSON response
             response_text = message.content[0].text
 
-            # Strip markdown code blocks if present
+            # Extract JSON from response - handle text/markdown before/after JSON
             response_text = response_text.strip()
-            if response_text.startswith('```'):
-                # Remove opening ```json or ```
-                response_text = response_text.split('\n', 1)[1] if '\n' in response_text else response_text[3:]
-                # Remove closing ```
-                if response_text.endswith('```'):
-                    response_text = response_text.rsplit('```', 1)[0]
-                response_text = response_text.strip()
 
-            data = json.loads(response_text)
+            # Try to extract JSON from ```json ... ``` code blocks first
+            import re
+            json_block = re.search(r'```(?:json)?\s*\n(.*?)```', response_text, re.DOTALL)
+            if json_block:
+                response_text = json_block.group(1).strip()
+            else:
+                # Fallback: find the first { and last } to extract JSON object
+                first_brace = response_text.find('{')
+                last_brace = response_text.rfind('}')
+                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                    response_text = response_text[first_brace:last_brace + 1]
+
+            try:
+                data = json.loads(response_text)
+            except json.JSONDecodeError:
+                # Try to repair truncated JSON by closing open brackets
+                repaired = response_text.rstrip().rstrip(',')
+                # Count open vs close braces/brackets
+                open_braces = repaired.count('{') - repaired.count('}')
+                open_brackets = repaired.count('[') - repaired.count(']')
+                repaired += '}' * max(open_braces, 0) + ']' * max(open_brackets, 0)
+                # Try one more pattern: close any unclosed "products" array
+                if '"products"' in repaired and open_brackets > 0:
+                    repaired = repaired.rstrip('}').rstrip() .rstrip(',') + ']}'
+                data = json.loads(repaired)
+                logger.info("Successfully repaired truncated JSON response")
 
             # Extract products list from the JSON response
             if isinstance(data, dict) and 'products' in data:
@@ -108,11 +126,11 @@ class AffiliateRecommender:
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Claude response as JSON: {e}")
-            logger.error(f"Response text: {response_text}")
-            return None
+            logger.error(f"Response text (first 500 chars): {response_text[:500]}")
+            return []
         except Exception as e:
             logger.error(f"Error generating recommendations: {e}")
-            return None
+            return []
 
     def _build_recommendation_prompt(
         self,
