@@ -20,7 +20,7 @@ def add_no_cache_headers(response):
 oauth = OAuth()
 
 # Allowed email domains
-ALLOWED_DOMAINS = ['digidom.ventures', 'banyantreedigital.com']
+ALLOWED_DOMAINS = ['digidom.ventures', 'banyantree.digital']
 
 
 def init_oauth(app):
@@ -100,7 +100,7 @@ def authorize():
 
         # Check if email domain is allowed
         if not is_email_allowed(email):
-            flash(f'Access denied. Only @digidom.ventures and @banyantreedigital.com emails are allowed.', 'error')
+            flash(f'Access denied. Only @digidom.ventures and @banyantree.digital emails are allowed.', 'error')
             return redirect(url_for('auth.login'))
 
         # Check if email is verified by Google
