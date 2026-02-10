@@ -193,7 +193,7 @@ class TranscriptionService:
                     if generate_transcript:
                         if not audio_path or not audio_path.exists():
                             logger.error("Failed to get audio for transcription")
-                            return None
+                            raise Exception("Failed to download audio. Check RapidAPI key or ffmpeg installation.")
 
                         update_progress('download', 20, 'Audio ready for transcription')
                         logger.info(f"Transcribing with {provider}...")
@@ -201,7 +201,7 @@ class TranscriptionService:
                         transcript_result = self._transcribe_with_fallback(audio_path, provider)
 
                         if not transcript_result:
-                            return None
+                            raise Exception("Transcription failed. Audio may be corrupt or API unavailable.")
 
                         update_progress('transcribe', 65, 'Transcription complete')
 
