@@ -142,6 +142,7 @@ class AffiliateRecommender:
     ) -> str:
         """Build prompt for affiliate recommendations."""
         # Truncate transcript if too long
+        transcript = transcript or ''
         max_transcript_length = 10000
         if len(transcript) > max_transcript_length:
             transcript = transcript[:max_transcript_length] + "... [truncated]"
