@@ -1901,6 +1901,48 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Navbar badge elements
+    const navTaskNotif = document.getElementById('navTaskNotif');
+    const navTaskBadge = document.getElementById('navTaskBadge');
+    const navTaskIconSpin = document.getElementById('navTaskIconSpin');
+    const navTaskIconDone = document.getElementById('navTaskIconDone');
+    const navTaskIconError = document.getElementById('navTaskIconError');
+
+    function updateNavBadge() {
+        const tVisible = statusBar && statusBar.style.display !== 'none';
+        const aVisible = analysisStatusBar && analysisStatusBar.style.display !== 'none';
+        const count = (tVisible ? 1 : 0) + (aVisible ? 1 : 0);
+        if (navTaskNotif) {
+            navTaskNotif.style.display = count > 0 ? 'block' : 'none';
+            navTaskBadge.textContent = count;
+            navTaskIconSpin.style.display = count > 0 ? 'inline-block' : 'none';
+            navTaskIconDone.style.display = 'none';
+            navTaskIconError.style.display = 'none';
+        }
+    }
+
+    function showNavBadgeComplete() {
+        if (navTaskNotif) {
+            navTaskIconSpin.style.display = 'none';
+            navTaskIconDone.style.display = 'inline-block';
+            navTaskIconError.style.display = 'none';
+            setTimeout(() => {
+                const tVisible = statusBar && statusBar.style.display !== 'none';
+                const aVisible = analysisStatusBar && analysisStatusBar.style.display !== 'none';
+                if (!tVisible && !aVisible) navTaskNotif.style.display = 'none';
+            }, 3000);
+        }
+    }
+
+    function showNavBadgeError() {
+        if (navTaskNotif) {
+            navTaskNotif.style.display = 'block';
+            navTaskIconSpin.style.display = 'none';
+            navTaskIconDone.style.display = 'none';
+            navTaskIconError.style.display = 'inline-block';
+        }
+    }
+
     // Status bar elements
     const statusBar = document.getElementById('transcriptionStatusBar');
     const statusSpinner = document.getElementById('statusSpinner');
@@ -1915,6 +1957,7 @@ document.addEventListener('DOMContentLoaded', function() {
     statusCloseBtn.addEventListener('click', function() {
         statusBar.style.display = 'none';
         updateStatusBarPositions();
+        updateNavBadge();
     });
 
     // Function to stack status bars when both are visible
@@ -1963,6 +2006,8 @@ document.addEventListener('DOMContentLoaded', function() {
         statusProgressBar.style.width = '0%';
         statusPercent.textContent = '0%';
         updateStatusBarPositions();
+
+        updateNavBadge();
 
         // Show/hide relevant steps in status bar
         const needsDownload = withTranscript || withEmotions || withFrames;
@@ -2110,13 +2155,13 @@ document.addEventListener('DOMContentLoaded', function() {
         statusProgressBar.style.width = '100%';
         statusPercent.textContent = '100%';
         statusProgressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
-        // Mark all steps as complete
         ['download', 'frames', 'transcribe', 'emotions', 'insights', 'save'].forEach(s => {
             const stepEl = document.getElementById('statusStep-' + s);
             if (stepEl && stepEl.style.display !== 'none') {
                 stepEl.querySelector('i').className = 'fas fa-check-circle text-success';
             }
         });
+        showNavBadgeComplete();
     }
 
     function showStatusError(message) {
@@ -2124,8 +2169,8 @@ document.addEventListener('DOMContentLoaded', function() {
         statusCheck.style.display = 'none';
         statusErrorIcon.style.display = 'inline-block';
         statusText.textContent = message || 'Error occurred';
-        // statusCloseBtn already visible
         document.querySelector('[data-bs-target="#transcribeModal"]').disabled = false;
+        showNavBadgeError();
     }
 
     // ==================== RE-ANALYZE BUTTON ====================
@@ -2143,6 +2188,7 @@ document.addEventListener('DOMContentLoaded', function() {
     analysisCloseBtn.addEventListener('click', function() {
         analysisStatusBar.style.display = 'none';
         updateStatusBarPositions();
+        updateNavBadge();
     });
 
     // Re-analyze modal confirm button click
@@ -2178,6 +2224,7 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisProgressBar.style.width = '0%';
         analysisPercent.textContent = '0%';
         updateStatusBarPositions();
+        updateNavBadge();
 
         // Reset step icons - show only selected types
         ['script', 'description', 'affiliate', 'conversion'].forEach(s => {
@@ -2286,6 +2333,7 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisProgressBar.style.width = '100%';
         analysisPercent.textContent = '100%';
         analysisProgressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+        showNavBadgeComplete();
     }
 
     function showAnalysisError(message) {
@@ -2293,8 +2341,8 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisCheck.style.display = 'none';
         analysisErrorIcon.style.display = 'inline-block';
         analysisStatusText.textContent = message || 'Error occurred';
-        // analysisCloseBtn already visible
         reanalyzeBtn.disabled = false;
+        showNavBadgeError();
     }
 
     // Reset modal on close
@@ -2346,9 +2394,10 @@ document.addEventListener('DOMContentLoaded', function() {
         pollAnalysisStatus();
     }
 
-    // Update positions if both are visible on load
+    // Update positions and badge if both are visible on load
     if (isTranscribingOnLoad || isAnalyzingOnLoad) {
         updateStatusBarPositions();
+        updateNavBadge();
     }
 
 });

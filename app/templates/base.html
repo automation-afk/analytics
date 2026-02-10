@@ -50,7 +50,25 @@
                         </a>
                     </li>
                 </ul>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 align-items-center">
+                    <!-- Task Progress Notification -->
+                    <div id="navTaskNotif" class="dropdown position-relative" style="display: none;">
+                        <button class="btn btn-outline-light btn-sm position-relative" id="navTaskBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                            <i class="fas fa-cog fa-spin" id="navTaskIconSpin"></i>
+                            <i class="fas fa-check-circle text-success" id="navTaskIconDone" style="display: none;"></i>
+                            <i class="fas fa-exclamation-circle text-danger" id="navTaskIconError" style="display: none;"></i>
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="navTaskBadge" style="font-size: 0.55rem;">1</span>
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end p-0" id="navTaskDropdown" style="min-width: 320px;">
+                            <div class="px-3 py-2 bg-dark text-white d-flex justify-content-between align-items-center" style="border-radius: 0.375rem 0.375rem 0 0;">
+                                <small class="fw-bold"><i class="fas fa-tasks me-1"></i> Running Tasks</small>
+                                <span class="badge bg-danger" id="navTaskDropdownCount">0</span>
+                            </div>
+                            <div id="navTaskList" class="p-2">
+                                <div class="text-muted text-center py-2"><small>No tasks running</small></div>
+                            </div>
+                        </div>
+                    </div>
                     <button id="darkModeToggle" class="btn btn-outline-light btn-sm" title="Toggle Dark Mode">
                         <i id="darkModeIcon" class="fas fa-moon"></i>
                     </button>
@@ -114,146 +132,93 @@
         </div>
     </div>
 
-    <!-- Background Task Progress Modal (Analysis & Transcription) -->
-    <div class="modal fade" id="analysisProgressModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">
-                        <i class="fas fa-cog fa-spin me-2"></i>
-                        <span id="modalTitle">Processing in Progress</span>
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body text-center py-4">
-                    <!-- Progress bar -->
-                    <div class="progress mb-3" style="height: 20px;">
-                        <div id="modalProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
-                             role="progressbar" style="width: 0%">0%</div>
-                    </div>
-                    <p class="mb-2"><strong id="modalVideoTitle">Processing video...</strong></p>
-                    <p class="text-muted mb-0" id="modalMessage">This takes approximately 2-3 minutes</p>
-                    <p class="text-muted small">You can navigate to other pages while this runs</p>
-                </div>
-                <div class="modal-footer justify-content-between">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i>Dismiss
-                    </button>
-                    <small class="text-muted">
-                        Processing continues in background
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
-    <!-- Background Task Progress Checker (Analysis & Transcription) -->
+    <!-- Global Background Task Badge Checker -->
     <script>
-        // Check for running tasks every 3 seconds
-        let taskModal = null;
-        let taskCheckInterval = null;
-        let modalEl = null;
-        let userDismissedModal = false;  // Track if user manually dismissed
-        let currentTaskType = null;  // 'analysis' or 'transcription'
-        let currentVideoId = null;
+    (function() {
+        const navNotif = document.getElementById('navTaskNotif');
+        const navBtn = document.getElementById('navTaskBtn');
+        const navBadge = document.getElementById('navTaskBadge');
+        const navSpin = document.getElementById('navTaskIconSpin');
+        const navDone = document.getElementById('navTaskIconDone');
+        const navError = document.getElementById('navTaskIconError');
+        const navTaskList = document.getElementById('navTaskList');
+        const navTaskDropdownCount = document.getElementById('navTaskDropdownCount');
+        if (!navNotif) return;
 
-        function updateModalProgress(progress, message, title, taskType) {
-            if (!modalEl) {
-                modalEl = document.getElementById('analysisProgressModal');
-                taskModal = new bootstrap.Modal(modalEl);
+        let checkInterval = null;
 
-                // Listen for manual dismiss
-                modalEl.addEventListener('hidden.bs.modal', function() {
-                    userDismissedModal = true;
-                });
-            }
+        function buildTaskItem(type, title, videoId, pct, step) {
+            const icon = type === 'transcribe' ? 'fa-microphone' : 'fa-brain';
+            const color = type === 'transcribe' ? 'success' : 'primary';
+            const label = type === 'transcribe' ? 'Transcribing' : 'Analyzing';
+            const shortTitle = title ? (title.length > 40 ? title.substring(0, 40) + '...' : title) : videoId;
+            const stepText = step ? '<div class="text-muted" style="font-size:0.7rem;">' + step + '</div>' : '';
 
-            // Update modal content
-            const progressBar = document.getElementById('modalProgressBar');
-            progressBar.style.width = `${progress}%`;
-            progressBar.textContent = `${progress}%`;
-
-            document.getElementById('modalVideoTitle').textContent = title;
-            document.getElementById('modalMessage').textContent = message;
-
-            // Update header based on task type
-            const modalTitle = document.getElementById('modalTitle');
-            if (taskType === 'transcription') {
-                modalTitle.innerHTML = '<i class="fas fa-microphone-alt me-2"></i>Transcription in Progress';
-            } else {
-                modalTitle.innerHTML = '<i class="fas fa-brain me-2"></i>Analysis in Progress';
-            }
+            return '<a href="/videos/' + videoId + '" class="d-block text-decoration-none text-dark p-2 rounded task-item" style="background:#f8f9fa; margin-bottom:4px;">'
+                + '<div class="d-flex align-items-center gap-2">'
+                + '<i class="fas ' + icon + ' text-' + color + '"></i>'
+                + '<div class="flex-grow-1" style="min-width:0;">'
+                + '<div class="fw-semibold" style="font-size:0.8rem;">' + label + '</div>'
+                + '<div class="text-truncate" style="font-size:0.75rem;">' + shortTitle + '</div>'
+                + stepText
+                + '</div>'
+                + '<div class="text-end" style="min-width:45px;">'
+                + '<div class="fw-bold text-' + color + '" style="font-size:0.85rem;">' + pct + '%</div>'
+                + '</div>'
+                + '</div>'
+                + '<div class="progress mt-1" style="height:3px;">'
+                + '<div class="progress-bar bg-' + color + '" style="width:' + pct + '%"></div>'
+                + '</div>'
+                + '</a>';
         }
 
-        function checkBackgroundTaskStatus() {
-            // Check both analysis and transcription status in parallel
+        function checkTasks() {
             Promise.all([
                 fetch('/api/v1/analysis/status').then(r => r.json()).catch(() => ({ is_analyzing: false, videos_analyzing: [] })),
                 fetch('/api/v1/transcribe/status').then(r => r.json()).catch(() => ({ is_transcribing: false, videos_transcribing: [] }))
-            ]).then(([analysisData, transcribeData]) => {
-                let hasRunningTask = false;
-                let taskInfo = null;
-                let taskType = null;
+            ]).then(([aData, tData]) => {
+                let count = 0;
+                let html = '';
 
-                // Prioritize transcription (more frequent updates)
-                if (transcribeData.is_transcribing && transcribeData.videos_transcribing.length > 0) {
-                    hasRunningTask = true;
-                    taskInfo = transcribeData.videos_transcribing[0];
-                    taskType = 'transcription';
-                } else if (analysisData.is_analyzing && analysisData.videos_analyzing.length > 0) {
-                    hasRunningTask = true;
-                    taskInfo = analysisData.videos_analyzing[0];
-                    taskType = 'analysis';
+                if (tData.is_transcribing && tData.videos_transcribing && tData.videos_transcribing.length > 0) {
+                    count++;
+                    const t = tData.videos_transcribing[0];
+                    html += buildTaskItem('transcribe', t.title, t.video_id, t.progress || 0, t.step || '');
+                }
+                if (aData.is_analyzing && aData.videos_analyzing && aData.videos_analyzing.length > 0) {
+                    count++;
+                    const a = aData.videos_analyzing[0];
+                    html += buildTaskItem('analysis', a.title, a.video_id, a.progress || 0, a.step || '');
                 }
 
-                if (hasRunningTask && taskInfo) {
-                    currentTaskType = taskType;
-                    currentVideoId = taskInfo.video_id;
-
-                    const title = taskInfo.title ?
-                        `${taskType === 'transcription' ? 'Transcribing' : 'Analyzing'}: ${taskInfo.title.substring(0, 45)}${taskInfo.title.length > 45 ? '...' : ''}` :
-                        `${taskType === 'transcription' ? 'Transcribing' : 'Analyzing'} video...`;
-
-                    const progress = taskInfo.progress || 0;
-                    const message = taskInfo.message || 'Processing...';
-
-                    updateModalProgress(progress, message, title, taskType);
-
-                    // Only show if not manually dismissed and not already visible
-                    const isCurrentlyVisible = modalEl && modalEl.classList.contains('show');
-                    if (!isCurrentlyVisible && !userDismissedModal) {
-                        taskModal.show();
-                    }
+                if (count > 0) {
+                    navNotif.style.display = 'block';
+                    navBadge.textContent = count;
+                    navTaskDropdownCount.textContent = count;
+                    navSpin.style.display = 'inline-block';
+                    navDone.style.display = 'none';
+                    navError.style.display = 'none';
+                    navTaskList.innerHTML = html;
                 } else {
-                    // No tasks running - hide modal if visible and reset dismiss flag
-                    userDismissedModal = false;
-                    currentTaskType = null;
-                    currentVideoId = null;
-                    if (modalEl && modalEl.classList.contains('show')) {
-                        taskModal.hide();
-                    }
+                    navNotif.style.display = 'none';
+                    navTaskList.innerHTML = '<div class="text-muted text-center py-2"><small>No tasks running</small></div>';
                 }
-            }).catch(error => console.error('Error checking task status:', error));
+            }).catch(() => {});
         }
 
-        // Start checking when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            checkBackgroundTaskStatus();  // Check immediately
-            taskCheckInterval = setInterval(checkBackgroundTaskStatus, 3000);  // Then every 3 seconds
-        });
-
-        // Clean up interval when page unloads
+        // Start polling on all pages
+        checkTasks();
+        checkInterval = setInterval(checkTasks, 5000);
         window.addEventListener('beforeunload', function() {
-            if (taskCheckInterval) {
-                clearInterval(taskCheckInterval);
-            }
+            if (checkInterval) clearInterval(checkInterval);
         });
+    })();
     </script>
 
     <!-- Dark Mode Toggle -->
