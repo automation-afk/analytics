@@ -53,6 +53,23 @@ def create_app(config_name='development'):
         credentials_path=app.config['GOOGLE_CREDENTIALS_PATH']
     )
 
+    # Initialize YouTube Comments service
+    from app.services.youtube_comments_service import YouTubeCommentsService
+    app.youtube_comments = YouTubeCommentsService(
+        api_key=app.config.get('YOUTUBE_API_KEY'),
+        credentials_path=app.config.get('YOUTUBE_CREDENTIALS_PATH'),
+        local_db=app.local_db
+    )
+
+    # Load known affiliate brands for comment brand detection
+    try:
+        affiliates = app.bigquery.get_all_affiliates()
+        if affiliates:
+            app.youtube_comments.set_known_brands(affiliates)
+            logging.info(f"Loaded {len(affiliates)} affiliate brands for comment detection")
+    except Exception as e:
+        logging.warning(f"Could not load affiliate brands: {e}")
+
     # Initialize OAuth
     from app.blueprints.auth import init_oauth
     init_oauth(app)

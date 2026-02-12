@@ -161,6 +161,41 @@ def conversion_audit():
         )
         cache.set(cache_key, audit_data, timeout=120)
 
+    # Merge YouTube comment brand data and CTA scores from local DB
+    if audit_data:
+        video_ids = [row['video_id'] for row in audit_data]
+        comment_summary = current_app.local_db.get_comments_summary(video_ids)
+        cta_scores = current_app.local_db.get_cta_audit_scores(video_ids)
+        preferred_brands = current_app.config.get('PREFERRED_BRANDS', {})
+
+        for row in audit_data:
+            vid = row['video_id']
+            if vid in comment_summary:
+                summary = comment_summary[vid]
+                # Use YouTube comment brand if BigQuery doesn't have one
+                if not row.get('comment_brand') and summary.get('pinned_brand'):
+                    row['comment_brand'] = summary['pinned_brand']
+                # Add pinned comment text and links for modal display
+                row['pinned_text'] = summary.get('pinned_text', '')
+                row['pinned_author'] = summary.get('pinned_author', '')
+                row['pinned_links'] = summary.get('pinned_links', [])
+                row['has_yt_comments'] = True
+            else:
+                row['pinned_text'] = ''
+                row['pinned_author'] = ''
+                row['pinned_links'] = []
+                row['has_yt_comments'] = False
+
+            # Merge CTA scores
+            if vid in cta_scores:
+                row['cta_audit'] = cta_scores[vid]
+            else:
+                row['cta_audit'] = None
+
+            # Add preferred brand for this silo
+            silo = (row.get('silo') or '').strip()
+            row['preferred_brand'] = preferred_brands.get(silo, preferred_brands.get(silo.lower(), ''))
+
     # Get filter dropdowns (cached)
     all_channels = cache.get('all_channels')
     if all_channels is None:
@@ -174,6 +209,8 @@ def conversion_audit():
 
     has_more = len(audit_data) == per_page
 
+    preferred_brands = current_app.config.get('PREFERRED_BRANDS', {})
+
     return render_template(
         'dashboard/conversion_audit.html',
         audit_data=audit_data,
@@ -185,7 +222,8 @@ def conversion_audit():
         sort_by=sort_by,
         sort_dir=sort_dir,
         all_channels=all_channels,
-        all_silos=all_silos
+        all_silos=all_silos,
+        preferred_brands=preferred_brands
     )
 
 
@@ -218,10 +256,17 @@ def conversion_audit_export():
     writer.writerow([
         'Video ID', 'Title', 'Channel', 'Keyword', 'Silo',
         'Avg Monthly Revenue (90d)', 'Avg Monthly Views (90d)',
-        'Conversion Rate %', 'Desc CTR %', 'Pinned CTR %',
-        'Thumbnail CTR %', 'Rank', 'Desc Brand', 'Comment Brand', 'Description'
+        'EPC (90d)', 'Conversion Rate %', 'Desc CTR %', 'Pinned CTR %',
+        'Thumbnail CTR %', 'Rank', 'Desc Brand', 'Comment Brand',
+        'Rev by Brand', 'Description'
     ])
     for row in audit_data:
+        # Format brand revenue as "Brand: $amount" list
+        brand_rev_str = ''
+        if row.get('brand_revenue'):
+            brand_rev_str = '; '.join(
+                f"{br['brand']}: ${br['revenue']:.2f}" for br in row['brand_revenue'][:5]
+            )
         writer.writerow([
             row['video_id'],
             row['title'],
@@ -230,6 +275,7 @@ def conversion_audit_export():
             row['silo'],
             row['avg_monthly_revenue'],
             row['avg_monthly_views'],
+            row.get('epc_90d', 0),
             row['conversion_rate'],
             row['desc_ctr'],
             row['pinned_ctr'],
@@ -237,6 +283,7 @@ def conversion_audit_export():
             row.get('rank') or '',
             row.get('desc_brand') or '',
             row.get('comment_brand') or '',
+            brand_rev_str,
             row['description'][:500].replace('\n', ' ').replace('\r', '') if row['description'] else ''
         ])
 

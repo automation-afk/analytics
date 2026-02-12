@@ -1,0 +1,277 @@
+================================================================================
+                      YOUTUBE ANALYTICS DASHBOARD
+                    AI SERVICES & SUBSCRIPTION COSTS
+================================================================================
+
+  Last Updated: February 2025
+
+  This document lists all AI services, APIs, and subscriptions used by the
+  YouTube Analytics Dashboard web application, along with their pricing.
+
+  ================================================================================
+                            1. AI TEXT ANALYSIS
+  ================================================================================
+
+  ANTHROPIC CLAUDE (claude-sonnet-4-20250514)
+  -------------------------------------------
+  Used for: Script Analysis, Description Analysis, Affiliate Recommendations
+
+  Pricing (per 1M tokens):
+    - Input:  $3.00
+    - Output: $15.00
+
+  Typical Usage per Video:
+    - Script Analysis:       ~2,000 input + ~500 output tokens = ~$0.01
+    - Description Analysis:  ~1,500 input + ~400 output tokens = ~$0.01
+    - Affiliate Recs:        ~2,500 input + ~600 output tokens = ~$0.015
+
+  Estimated Cost: ~$0.02-0.04 per video analysis
+
+
+  ANTHROPIC CLAUDE (claude-3-5-sonnet-20241022)
+  ---------------------------------------------
+  Used for: Conversion Analysis
+
+  Pricing (per 1M tokens):
+    - Input:  $3.00
+    - Output: $15.00
+
+  Typical Usage per Video:
+    - Conversion Analysis:   ~3,000 input + ~500 output tokens = ~$0.015
+
+  Estimated Cost: ~$0.015 per video
+
+
+  --------------------------------------------------------------------------------
+  TOTAL TEXT ANALYSIS COST: ~$0.03-0.05 per video
+  --------------------------------------------------------------------------------
+
+  ================================================================================
+                            2. VISION AI (FRAME ANALYSIS)
+  ================================================================================
+
+  OPENAI GPT-4o-mini (gpt-4o-mini) [ACTIVE]
+  -----------------------------------------
+  Used for: Frame Analysis (analyzing video screenshots)
+
+  Pricing:
+    - Input:  $0.15 per 1M tokens
+    - Output: $0.60 per 1M tokens
+    - Images: ~85 tokens per image (low detail mode)
+
+  Typical Usage per Video (10-min video, 10s intervals = ~60 frames):
+    - 60 frames x 85 tokens = 5,100 image tokens
+    - Text prompt: ~200 tokens
+    - Output: ~1,500 tokens
+    - Total: ~$0.005 per video
+
+  Estimated Cost: ~$0.005 per video
+
+
+  ANTHROPIC CLAUDE (claude-sonnet-4-20250514) [DISABLED - for reference]
+  ----------------------------------------------------------------------
+  Previously used for: Frame Analysis
+
+  Pricing:
+    - Input:  $3.00 per 1M tokens
+    - Images: ~1,600 tokens per image (768x768)
+
+  Previous Cost per Video: ~$0.36 per video (70x more expensive than GPT-4o-mini)
+
+
+  --------------------------------------------------------------------------------
+  TOTAL FRAME ANALYSIS COST: ~$0.005 per video (using GPT-4o-mini)
+  --------------------------------------------------------------------------------
+
+  ================================================================================
+                            3. TRANSCRIPTION
+  ================================================================================
+
+  GROQ (whisper-large-v3) [PRIMARY - FREE]
+  ----------------------------------------
+  Used for: Audio transcription (primary)
+
+  Pricing: FREE (with rate limits)
+    - Free tier: Generous rate limits for most use cases
+    - Very fast transcription
+
+  Estimated Cost: $0.00
+
+
+  OPENAI WHISPER (whisper-1) [FALLBACK]
+  -------------------------------------
+  Used for: Audio transcription (fallback when Groq fails)
+
+  Pricing:
+    - $0.006 per minute of audio
+
+  Typical Usage (10-min video):
+    - 10 minutes x $0.006 = $0.06
+
+  Estimated Cost: $0.00 (free via Groq) or $0.06/video (if fallback to OpenAI)
+
+
+  --------------------------------------------------------------------------------
+  TOTAL TRANSCRIPTION COST: $0.00 (Groq) or ~$0.06/video (OpenAI fallback)
+  --------------------------------------------------------------------------------
+
+  ================================================================================
+                          4. EMOTION ANALYSIS
+  ================================================================================
+
+  HUME AI (Expression Measurement API)
+  ------------------------------------
+  Used for: Voice emotion analysis from audio
+
+  Pricing:
+    - Batch API: $0.002 per audio minute (estimated)
+    - Free tier available with limits
+
+  Typical Usage (10-min video):
+    - 10 minutes x $0.002 = $0.02
+
+  Estimated Cost: ~$0.02 per video
+
+
+  --------------------------------------------------------------------------------
+  TOTAL EMOTION ANALYSIS COST: ~$0.02 per video
+  --------------------------------------------------------------------------------
+
+  ================================================================================
+                          5. DATA STORAGE & AUTH
+  ================================================================================
+
+  GOOGLE BIGQUERY
+  ---------------
+  Used for: Storing video metrics, analysis results, channel data
+
+  Pricing:
+    - Storage: $0.02 per GB/month
+    - Queries: $5.00 per TB processed (first 1TB/month free)
+
+  Typical Usage:
+    - Storage: < 1GB for most channels = ~$0.02/month
+    - Queries: Well under free tier for typical usage
+
+  Estimated Cost: ~$0-5/month depending on usage
+
+
+  GOOGLE OAUTH 2.0
+  ----------------
+  Used for: User authentication
+
+  Pricing: FREE
+
+
+  SQLITE (Local Database)
+  -----------------------
+  Used for: Storing transcripts, frame analysis, emotion data locally
+
+  Pricing: FREE (file-based database)
+
+
+  --------------------------------------------------------------------------------
+  TOTAL INFRASTRUCTURE COST: ~$0-5/month
+  --------------------------------------------------------------------------------
+
+  ================================================================================
+                          COST SUMMARY PER VIDEO
+  ================================================================================
+
+  Full Analysis (all features enabled):
+  -------------------------------------
+  | Service              | Cost        | Notes                         |
+  |---------------------|-------------|-------------------------------|
+  | Text Analysis       | $0.03-0.05  | Script, Desc, Affiliate, Conv |
+  | Frame Analysis      | $0.005      | GPT-4o-mini (60 frames)       |
+  | Transcription       | $0.00       | Groq free tier                |
+  | Emotion Analysis    | $0.02       | Hume AI                       |
+  |---------------------|-------------|-------------------------------|
+  | TOTAL PER VIDEO     | ~$0.06-0.08 |                               |
+
+  Basic Analysis (no frames/emotions):
+  ------------------------------------
+  | Service              | Cost        |
+  |---------------------|-------------|
+  | Text Analysis       | $0.03-0.05  |
+  | Transcription       | $0.00       |
+  |---------------------|-------------|
+  | TOTAL PER VIDEO     | ~$0.03-0.05 |
+
+
+================================================================================
+                        MONTHLY COST ESTIMATES
+================================================================================
+
+  | Videos/Month | Basic Analysis | Full Analysis | With Infrastructure |
+  |--------------|----------------|---------------|---------------------|
+  | 10 videos    | $0.30-0.50     | $0.60-0.80    | $1-6               |
+  | 50 videos    | $1.50-2.50     | $3.00-4.00    | $4-10              |
+  | 100 videos   | $3.00-5.00     | $6.00-8.00    | $7-15              |
+  | 500 videos   | $15.00-25.00   | $30.00-40.00  | $35-50             |
+
+
+================================================================================
+                        REQUIRED API KEYS
+================================================================================
+
+  Environment Variable          | Service        | Required | Get From
+  ------------------------------|----------------|----------|---------------------------
+  ANTHROPIC_API_KEY             | Claude AI      | Yes      | console.anthropic.com
+  OPENAI_API_KEY                | OpenAI         | Yes*     | platform.openai.com
+  GROQ_API_KEY                  | Groq           | Yes*     | console.groq.com
+  HUME_API_KEY                  | Hume AI        | Optional | beta.hume.ai
+  GOOGLE_OAUTH_CLIENT_ID        | Google OAuth   | Yes      | console.cloud.google.com
+  GOOGLE_OAUTH_CLIENT_SECRET    | Google OAuth   | Yes      | console.cloud.google.com
+  GOOGLE_CREDENTIALS_JSON       | BigQuery       | Yes      | console.cloud.google.com
+  BIGQUERY_PROJECT_ID           | BigQuery       | Yes      | console.cloud.google.com
+
+  * At least one of GROQ_API_KEY or OPENAI_API_KEY is required for transcription
+
+
+================================================================================
+                        COST OPTIMIZATION TIPS
+================================================================================
+
+  1. USE GROQ FOR TRANSCRIPTION (FREE)
+    - Groq offers free Whisper transcription with generous limits
+    - Only falls back to OpenAI if Groq fails
+
+  2. USE GPT-4o-mini FOR FRAME ANALYSIS
+    - Already configured! 70x cheaper than Claude for vision
+    - Good enough quality for scene detection
+
+  3. BATCH ANALYSIS
+    - Run multiple videos overnight to stay within free tiers
+
+  4. SKIP OPTIONAL FEATURES
+    - Emotion analysis is optional ($0.02/video saved)
+    - Frame analysis is optional ($0.005/video saved)
+
+  5. CACHE RESULTS
+    - Analysis results are stored in BigQuery
+    - Re-analysis only when needed
+
+
+================================================================================
+                        VERSION HISTORY
+================================================================================
+
+  2025-02: Switched Frame Analysis from Claude to GPT-4o-mini (70x cost reduction)
+  2025-01: Added Hume AI emotion analysis
+  2025-01: Added Groq free transcription
+  2024-12: Initial release with Claude-only analysis
+
+  ================================================================================
+
+
+
+analyze_existing_links()	
+  Detects affiliate links in description	
+compare_recommendations_to_existing()	  
+  Cross-checks recs vs what's actually in description
+
+  What's Missing
+No automation for new videos - No scheduler to detect and auto-analyze new videos. Everything is manual trigger.
+No YouTube API scraping - Videos must already exist in BigQuery. The app doesn't pull new videos from YouTube directly.
+Affiliate validation - Recommends products but doesn't cross-check if the best one is actually being promoted in the video vs what's currently there

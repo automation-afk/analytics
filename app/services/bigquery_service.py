@@ -940,6 +940,21 @@ class BigQueryService:
             avg_revenue_per_video=0.0
         )
 
+    @staticmethod
+    def _parse_brand_revenue(brand_revenue_str: str) -> list:
+        """Parse 'Brand1:100.50|Brand2:50.25' into [{'brand': 'Brand1', 'revenue': 100.50}, ...]."""
+        result = []
+        if not brand_revenue_str:
+            return result
+        for item in brand_revenue_str.split('|'):
+            parts = item.rsplit(':', 1)
+            if len(parts) == 2:
+                try:
+                    result.append({'brand': parts[0].strip(), 'revenue': float(parts[1])})
+                except ValueError:
+                    continue
+        return result
+
     def get_conversion_audit_data(
         self,
         limit: int = 50,
@@ -971,11 +986,14 @@ class BigQueryService:
             'silo': 'vi.silo',
             'avg_monthly_revenue': 'tr.avg_monthly_revenue',
             'avg_monthly_views': 'tr.avg_monthly_views',
+            'epc_90d': 'tr.epc_90d',
             'conversion_rate': 'tr.conversion_rate',
             'desc_ctr': 'desc_ctr',
             'pinned_ctr': 'pinned_ctr',
             'thumbnail_ctr': 'yc.avg_thumbnail_ctr',
-            'rank': 'rk.latest_rank'
+            'rank': 'rk.latest_rank',
+            'comment_brand': 'cb.comment_affiliate',
+            'desc_brand': 'db.desc_affiliate'
         }
         sort_column = allowed_sorts.get(sort_by, 'tr.avg_monthly_revenue')
         sort_direction = 'ASC' if sort_dir.lower() == 'asc' else 'DESC'
@@ -1020,7 +1038,9 @@ class BigQueryService:
                 SUM(organic_views) as total_views_90d,
                 ROUND(SAFE_DIVIDE(SUM(sales), NULLIF(SUM(organic_views), 0)) * 100, 3) as conversion_rate,
                 SUM(clicks) as total_clicks,
-                SUM(sales) as total_sales
+                SUM(sales) as total_sales,
+                ROUND(SUM(revenue), 2) as total_revenue_90d,
+                ROUND(SAFE_DIVIDE(SUM(revenue), NULLIF(SUM(clicks), 0)), 2) as epc_90d
             FROM `company-wide-370010.Digibot.Metrics_by_Month`
             WHERE metrics_month_year >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
             GROUP BY video_id
@@ -1037,8 +1057,9 @@ class BigQueryService:
             SELECT
                 video_id,
                 SUM(IF(LOWER(Link_Placement) LIKE '%desc%', clicks, 0)) as desc_clicks,
-                SUM(IF(LOWER(Link_Placement) LIKE '%pin%' OR LOWER(Link_Placement) LIKE '%comment%', clicks, 0)) as pinned_clicks
+                SUM(IF(LOWER(Link_Placement) LIKE '%yt_pc%' OR LOWER(Link_Placement) LIKE '%pinned%', clicks, 0)) as pinned_clicks
             FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+            WHERE metric_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
             GROUP BY video_id
         ),
         latest_rank_date AS (
@@ -1047,12 +1068,12 @@ class BigQueryService:
             GROUP BY video_id
         ),
         rank_data AS (
-            SELECT r.video_id, MIN(r.rank) as latest_rank
+            SELECT r.video_id, MIN(r.rank) as latest_rank, ld.max_rank_date as rank_date
             FROM `company-wide-370010.Digibot.Rank_domination_score` r
             INNER JOIN latest_rank_date ld ON r.video_id = ld.video_id AND r.rank_date = ld.max_rank_date
             INNER JOIN `company-wide-370010.Digibot.Digibot_General_info` g ON r.video_id = g.video_id
             WHERE LOWER(r.keyword) = LOWER(g.main_keyword)
-            GROUP BY r.video_id
+            GROUP BY r.video_id, ld.max_rank_date
         ),
         desc_brand AS (
             SELECT video_id, Affiliate as desc_affiliate
@@ -1071,10 +1092,30 @@ class BigQueryService:
                 SELECT video_id, Affiliate,
                     ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY SUM(revenue) DESC) as rn
                 FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
-                WHERE LOWER(Link_Placement) LIKE '%pin%' OR LOWER(Link_Placement) LIKE '%comment%'
+                WHERE LOWER(Link_Placement) LIKE '%yt_pc%' OR LOWER(Link_Placement) LIKE '%pinned%'
                 GROUP BY video_id, Affiliate
             )
             WHERE rn = 1
+        ),
+        brand_revenue_breakdown AS (
+            SELECT
+                video_id,
+                STRING_AGG(
+                    CONCAT(Affiliate, ':', CAST(ROUND(total_rev, 2) AS STRING)),
+                    '|'
+                    ORDER BY total_rev DESC
+                ) as brand_revenue
+            FROM (
+                SELECT
+                    video_id,
+                    Affiliate,
+                    SUM(revenue) as total_rev
+                FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+                WHERE metric_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+                    AND Affiliate IS NOT NULL AND TRIM(Affiliate) != ''
+                GROUP BY video_id, Affiliate
+            )
+            GROUP BY video_id
         )
         SELECT
             vi.video_id,
@@ -1085,17 +1126,22 @@ class BigQueryService:
             vi.silo,
             tr.avg_monthly_revenue,
             tr.avg_monthly_views,
+            tr.epc_90d,
             tr.conversion_rate,
             tr.total_clicks,
             tr.total_sales,
+            tr.total_revenue_90d,
             yc.avg_thumbnail_ctr as thumbnail_ctr,
             ROUND(SAFE_DIVIDE(lk.desc_clicks, NULLIF(tr.total_views_90d, 0)) * 100, 2) as desc_ctr,
             ROUND(SAFE_DIVIDE(lk.pinned_clicks, NULLIF(tr.total_views_90d, 0)) * 100, 2) as pinned_ctr,
             lk.desc_clicks,
             lk.pinned_clicks,
+            tr.total_views_90d,
             rk.latest_rank as rank,
+            rk.rank_date,
             db.desc_affiliate,
-            cb.comment_affiliate
+            cb.comment_affiliate,
+            br.brand_revenue
         FROM video_info vi
         LEFT JOIN trailing_revenue tr ON vi.video_id = tr.video_id
         LEFT JOIN yt_ctr yc ON vi.video_id = yc.Video_ID
@@ -1103,6 +1149,7 @@ class BigQueryService:
         LEFT JOIN rank_data rk ON vi.video_id = rk.video_id
         LEFT JOIN desc_brand db ON vi.video_id = db.video_id
         LEFT JOIN comment_brand cb ON vi.video_id = cb.video_id
+        LEFT JOIN brand_revenue_breakdown br ON vi.video_id = br.video_id
         ORDER BY {sort_column} {sort_direction} NULLS LAST
         LIMIT @limit OFFSET @offset
         """
@@ -1128,17 +1175,22 @@ class BigQueryService:
                     'silo': row.silo or '',
                     'avg_monthly_revenue': float(row.avg_monthly_revenue) if row.avg_monthly_revenue else 0.0,
                     'avg_monthly_views': int(row.avg_monthly_views) if row.avg_monthly_views else 0,
+                    'epc_90d': float(row.epc_90d) if row.epc_90d else 0.0,
                     'conversion_rate': float(row.conversion_rate) if row.conversion_rate else 0.0,
                     'total_clicks': int(row.total_clicks) if row.total_clicks else 0,
                     'total_sales': int(row.total_sales) if row.total_sales else 0,
+                    'total_revenue_90d': float(row.total_revenue_90d) if row.total_revenue_90d else 0.0,
                     'thumbnail_ctr': float(row.thumbnail_ctr) if row.thumbnail_ctr else 0.0,
                     'desc_ctr': float(row.desc_ctr) if row.desc_ctr else 0.0,
                     'pinned_ctr': float(row.pinned_ctr) if row.pinned_ctr else 0.0,
                     'desc_clicks': int(row.desc_clicks) if row.desc_clicks else 0,
                     'pinned_clicks': int(row.pinned_clicks) if row.pinned_clicks else 0,
+                    'total_views_90d': int(row.total_views_90d) if row.total_views_90d else 0,
                     'rank': int(row.rank) if row.rank else None,
+                    'rank_date': str(row.rank_date) if row.rank_date else '',
                     'desc_brand': row.desc_affiliate or '',
                     'comment_brand': row.comment_affiliate or '',
+                    'brand_revenue': self._parse_brand_revenue(row.brand_revenue) if row.brand_revenue else [],
                 })
 
             logger.info(f"Fetched {len(audit_data)} videos for conversion audit")
@@ -1181,6 +1233,25 @@ class BigQueryService:
             return [{'placement': row.Link_Placement, 'rows': row.cnt, 'videos': row.video_cnt} for row in results]
         except Exception as e:
             logger.error(f"Error fetching link placements: {str(e)}")
+            return []
+
+    def get_all_affiliates(self) -> List[str]:
+        """Get all distinct affiliate brand names from Revenue_Metrics."""
+        try:
+            query = """
+            SELECT DISTINCT Affiliate
+            FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+            WHERE Affiliate IS NOT NULL AND TRIM(Affiliate) != ''
+            ORDER BY Affiliate
+            """
+            query_job = self.client.query(query)
+            results = query_job.result()
+            affiliates = [row.Affiliate for row in results]
+            logger.info(f"Fetched {len(affiliates)} distinct affiliates from BigQuery")
+            return affiliates
+
+        except Exception as e:
+            logger.error(f"Error getting affiliates: {str(e)}")
             return []
 
     def get_all_silos(self) -> List[str]:

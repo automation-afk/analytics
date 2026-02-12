@@ -1,0 +1,73 @@
+New Services Added
+Service	File	Purpose
+FrameAnalyzer	frame_analyzer.py	Vision AI analysis (Claude/GPT-4V)
+EmotionAnalyzer	emotion_analyzer.py	Hume AI voice emotions
+TranscriptionService	transcription_service.py	Updated with all features
+API Endpoint Updated
+POST /api/transcribe now accepts:
+
+
+{
+    "video_id": "ZJ0ZZLY03zU",
+    "frame_interval": 5,        // Extract frame every 5s
+    "analyze_frames": true,     // Analyze with vision AI
+    "analyze_emotions": true    // Analyze voice with Hume AI
+}
+
+
+#########################
+Ai suggestions in Affiliate Performance & Recommendations works
+##########################
+How "Analyze & Discard" Works
+Download video → temp folder
+Extract frames → temp folder
+Send frames to Claude Vision → get text descriptions
+Delete frames (temp folder auto-cleanup)
+Store only text descriptions in database (~1KB vs ~50KB per frame)
+Cost Estimate Per Video (Full Analysis)
+Feature	Provider	Cost
+Transcription	Groq	FREE
+Transcript Analysis	Claude Sonnet	~$0.04
+Frame Analysis (10 frames)	Claude Sonnet	~$0.02
+Emotion Analysis	Hume AI	~$0.05 (1 min audio)
+Total		~$0.10-0.15/video
+What Gets Stored
+Full transcript text
+Frame timestamps (array: [0, 5, 10, 15...])
+Frame descriptions (text from vision AI)
+Emotion summary (top emotions, segments)
+No images stored - just the AI-generated text analysis!
+
+AI Suggestions Flow
+1. User clicks Re-Analyze with "Affiliate" checkbox enabled
+
+2. Backend gathers data (analysis_service.py:234-248)
+
+Fetches the video's transcript (from local DB or BigQuery)
+Fetches the video's title and description (from BigQuery)
+Fetches real BigQuery performance data — actual revenue, clicks, sales, conversion rates for existing affiliate links
+3. Builds a prompt and sends to Claude AI (affiliate_recommender.py:170-214)
+
+Sends all the above data to Claude Sonnet
+Prompt tells Claude to:
+Identify the exact product type the video covers
+If real BigQuery data exists: put those proven products first, use their real conversion rates
+Fill remaining slots (up to 5 total) with direct competitors only
+Score relevance (1-10) and estimate conversion probability
+Claude returns JSON with product recommendations
+4. Stores results (analysis_service.py:269-270)
+
+Saves recommendations to PostgreSQL (local DB)
+5. Displays in the AI Suggestions tab
+
+Shows product name, reasoning, relevance score, estimated conversion
+"Mentioned in video" badge if the product appears in the transcript
+What data Claude receives:
+Video title + description
+Transcript (if available, truncated to 10,000 chars)
+Real affiliate performance from BigQuery (product names, revenue, clicks, conversion rates)
+Cost per run:
+~1 API call to Claude Sonnet
+Input: ~2,000-12,000 tokens (depends on transcript length)
+Output: ~1,000-2,000 tokens
+Roughly $0.01-0.05 per video

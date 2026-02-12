@@ -919,6 +919,320 @@ def regenerate_insights(video_id):
         }), 500
 
 
+# ==================== YOUTUBE COMMENTS ====================
+
+@bp.route('/comments/fetch', methods=['POST'])
+@login_required
+def fetch_comments():
+    """
+    Fetch YouTube comments for one or more videos and store in database.
+
+    Request body:
+        {
+            "video_ids": ["id1", "id2", ...],  // List of video IDs
+            "max_per_video": 50                 // Optional, default 50
+        }
+
+    Returns:
+        {"status": "started", "video_count": N}
+    """
+    data = request.get_json()
+    video_ids = data.get('video_ids', [])
+    max_per_video = data.get('max_per_video', 50)
+
+    if not video_ids:
+        return jsonify({'error': 'video_ids is required'}), 400
+
+    if not current_app.youtube_comments.youtube:
+        return jsonify({'error': 'YouTube API not configured. Set YOUTUBE_API_KEY in .env.web'}), 500
+
+    # Log activity
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_action(
+            email, 'Fetch Comments',
+            f'videos={len(video_ids)}, max={max_per_video}'
+        )
+
+    # Run in background thread for batch operations
+    if len(video_ids) > 1:
+        import threading
+
+        cache.set('fetching_comments', True, timeout=600)
+        cache.set('comments_progress', {
+            'total': len(video_ids),
+            'processed': 0,
+            'current': video_ids[0],
+            'results': {}
+        }, timeout=600)
+
+        app = current_app._get_current_object()
+
+        def run_batch():
+            try:
+                with app.app_context():
+                    results = {}
+                    for i, vid in enumerate(video_ids):
+                        cache.set('comments_progress', {
+                            'total': len(video_ids),
+                            'processed': i,
+                            'current': vid,
+                            'results': results
+                        }, timeout=600)
+
+                        count = app.youtube_comments.fetch_and_store(vid, max_per_video)
+                        results[vid] = count
+
+                    cache.set('comments_progress', {
+                        'total': len(video_ids),
+                        'processed': len(video_ids),
+                        'current': None,
+                        'results': results,
+                        'done': True
+                    }, timeout=300)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Batch comments error: {e}")
+            finally:
+                with app.app_context():
+                    cache.delete('fetching_comments')
+
+        thread = threading.Thread(target=run_batch)
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            'status': 'started',
+            'video_count': len(video_ids),
+            'message': f'Fetching comments for {len(video_ids)} videos in background'
+        })
+    else:
+        # Single video - do it synchronously
+        count = current_app.youtube_comments.fetch_and_store(video_ids[0], max_per_video)
+        return jsonify({
+            'status': 'completed',
+            'video_id': video_ids[0],
+            'comments_stored': count
+        })
+
+
+@bp.route('/comments/status')
+@login_required
+def comments_fetch_status():
+    """Get status of batch comment fetching."""
+    progress = cache.get('comments_progress')
+    if not progress:
+        return jsonify({'status': 'idle'})
+
+    if progress.get('done'):
+        return jsonify({
+            'status': 'completed',
+            'total': progress['total'],
+            'processed': progress['processed'],
+            'results': progress['results']
+        })
+
+    return jsonify({
+        'status': 'processing',
+        'total': progress['total'],
+        'processed': progress['processed'],
+        'current': progress.get('current')
+    })
+
+
+@bp.route('/comments/<video_id>')
+@login_required
+def get_comments(video_id):
+    """Get stored comments for a video."""
+    comments = current_app.local_db.get_comments(video_id)
+    pinned = next((c for c in comments if c.get('is_pinned')), None)
+
+    return jsonify({
+        'video_id': video_id,
+        'comments': comments,
+        'count': len(comments),
+        'pinned_comment': pinned,
+        'has_comments': len(comments) > 0
+    })
+
+
+# ==================== CTA SCORING ====================
+
+@bp.route('/cta-score', methods=['POST'])
+@login_required
+def score_cta():
+    """
+    Score CTA and description quality for one or more videos using Claude.
+
+    Request body:
+        {
+            "video_ids": ["id1", "id2"],  // Videos to score (from audit data)
+            "audit_data": [...]           // The audit row data (title, description, silo, etc.)
+        }
+
+    Returns:
+        {"status": "started|completed", "scores": {...}}
+    """
+    import threading
+
+    data = request.get_json()
+    videos = data.get('videos', [])
+
+    if not videos:
+        return jsonify({'error': 'videos array is required'}), 400
+
+    if not current_app.config.get('ANTHROPIC_API_KEY'):
+        return jsonify({'error': 'ANTHROPIC_API_KEY not configured'}), 500
+
+    preferred_brands = current_app.config.get('PREFERRED_BRANDS', {})
+    app = current_app._get_current_object()
+
+    # For small batches (<=3), do synchronously
+    if len(videos) <= 3:
+        from app.services.conversion_analyzer import ConversionAnalyzer
+        analyzer = ConversionAnalyzer(api_key=app.config['ANTHROPIC_API_KEY'])
+        scores = {}
+
+        for v in videos:
+            video_id = v.get('video_id')
+            silo = (v.get('silo') or '').strip()
+            preferred = preferred_brands.get(silo, preferred_brands.get(silo.lower(), ''))
+
+            result = analyzer.score_cta_and_description(
+                title=v.get('title', ''),
+                description=v.get('description', ''),
+                silo=silo,
+                keyword=v.get('keyword', ''),
+                preferred_brand=preferred or None,
+                desc_brand=v.get('desc_brand', ''),
+                comment_brand=v.get('comment_brand', '')
+            )
+
+            # Store in local DB
+            app.local_db.store_cta_audit_score(
+                video_id=video_id,
+                cta_score=result['cta_score'],
+                description_score=result['description_score'],
+                base_score=result['base_score'],
+                has_preferred_brand=result['has_preferred_brand'],
+                preferred_brand=preferred or '',
+                adjusted_score=result['adjusted_score'],
+                scoring_reasoning=result['reasoning']
+            )
+
+            scores[video_id] = result
+
+        return jsonify({'status': 'completed', 'scores': scores})
+
+    # For larger batches, run in background
+    cache.set('cta_scoring_progress', {
+        'total': len(videos), 'processed': 0, 'current': None
+    }, timeout=600)
+
+    def run_batch_scoring():
+        try:
+            with app.app_context():
+                from app.services.conversion_analyzer import ConversionAnalyzer
+                analyzer = ConversionAnalyzer(api_key=app.config['ANTHROPIC_API_KEY'])
+
+                for i, v in enumerate(videos):
+                    video_id = v.get('video_id')
+                    cache.set('cta_scoring_progress', {
+                        'total': len(videos), 'processed': i, 'current': video_id
+                    }, timeout=600)
+
+                    silo = (v.get('silo') or '').strip()
+                    preferred = preferred_brands.get(silo, preferred_brands.get(silo.lower(), ''))
+
+                    result = analyzer.score_cta_and_description(
+                        title=v.get('title', ''),
+                        description=v.get('description', ''),
+                        silo=silo,
+                        keyword=v.get('keyword', ''),
+                        preferred_brand=preferred or None,
+                        desc_brand=v.get('desc_brand', ''),
+                        comment_brand=v.get('comment_brand', '')
+                    )
+
+                    app.local_db.store_cta_audit_score(
+                        video_id=video_id,
+                        cta_score=result['cta_score'],
+                        description_score=result['description_score'],
+                        base_score=result['base_score'],
+                        has_preferred_brand=result['has_preferred_brand'],
+                        preferred_brand=preferred or '',
+                        adjusted_score=result['adjusted_score'],
+                        scoring_reasoning=result['reasoning']
+                    )
+
+                cache.set('cta_scoring_progress', {
+                    'total': len(videos), 'processed': len(videos),
+                    'current': None, 'done': True
+                }, timeout=300)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Batch CTA scoring error: {e}")
+        finally:
+            with app.app_context():
+                cache.delete('cta_scoring_active')
+
+    cache.set('cta_scoring_active', True, timeout=600)
+    thread = threading.Thread(target=run_batch_scoring)
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': f'Scoring {len(videos)} videos in background'
+    })
+
+
+@bp.route('/cta-score/status')
+@login_required
+def cta_score_status():
+    """Get status of batch CTA scoring."""
+    progress = cache.get('cta_scoring_progress')
+    if not progress:
+        return jsonify({'status': 'idle'})
+
+    if progress.get('done'):
+        return jsonify({
+            'status': 'completed',
+            'total': progress['total'],
+            'processed': progress['processed']
+        })
+
+    return jsonify({
+        'status': 'processing',
+        'total': progress['total'],
+        'processed': progress['processed'],
+        'current': progress.get('current')
+    })
+
+
+@bp.route('/preferred-brands')
+@login_required
+def get_preferred_brands():
+    """Get the preferred brand mapping per silo."""
+    return jsonify(current_app.config.get('PREFERRED_BRANDS', {}))
+
+
+@bp.route('/preferred-brands', methods=['POST'])
+@login_required
+def update_preferred_brands():
+    """Update preferred brand mapping.
+
+    Request body:
+        {"identitytheft": "Aura", "database": "Aura", "PC": "Aura", ...}
+    """
+    data = request.get_json()
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected a JSON object mapping silo -> brand'}), 400
+
+    current_app.config['PREFERRED_BRANDS'] = data
+    return jsonify({'status': 'updated', 'brands': data})
+
+
 # ==================== CLIENT-SIDE ACTIVITY TRACKING ====================
 
 @bp.route('/log-activity', methods=['POST'])

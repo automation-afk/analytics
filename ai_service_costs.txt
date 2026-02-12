@@ -1,0 +1,164 @@
+AI SERVICE COSTS - YouTube Analytics Dashboard
+================================================
+Last Updated: 2026-02-06
+
+This document lists all AI services used in the application and their estimated costs.
+
+================================================================================
+1. CLAUDE API (Anthropic) - Main AI Analysis
+================================================================================
+
+Model: claude-sonnet-4-20250514
+Pricing: https://www.anthropic.com/pricing
+
+Input:  $3.00 / 1M tokens
+Output: $15.00 / 1M tokens
+
+USAGE PER VIDEO ANALYSIS:
+-------------------------
+a) Script Quality Analysis (content_analyzer.py)
+   - Input: ~3,000 tokens (transcript + prompt)
+   - Output: ~800 tokens
+   - Cost: ~$0.009 + $0.012 = ~$0.021
+
+b) Description Analysis (description_analyzer.py)
+   - Input: ~1,500 tokens (description + YT Analytics + prompt)
+   - Output: ~500 tokens
+   - Cost: ~$0.0045 + $0.0075 = ~$0.012
+
+c) Affiliate Recommendations (affiliate_recommender.py)
+   - Input: ~3,000 tokens (transcript + prompt)
+   - Output: ~1,000 tokens
+   - Cost: ~$0.009 + $0.015 = ~$0.024
+
+d) Conversion Analysis (conversion_analyzer.py)
+   - Input: ~2,500 tokens (metrics + transcript excerpt + prompt)
+   - Output: ~800 tokens
+   - Cost: ~$0.0075 + $0.012 = ~$0.020
+
+e) Multimodal Content Insights (multimodal_analyzer.py) - NEW
+   - Input: ~5,000 tokens (transcript + emotions + frames + prompt)
+   - Output: ~1,200 tokens
+   - Cost: ~$0.015 + $0.018 = ~$0.033
+
+TOTAL PER FULL VIDEO ANALYSIS: ~$0.11 per video
+
+================================================================================
+2. GROQ API - Transcription (Free Tier)
+================================================================================
+
+Model: whisper-large-v3
+Pricing: FREE (with rate limits)
+
+Rate Limits:
+- 30 requests/minute
+- 7,200 audio seconds/day (~2 hours)
+
+Cost: $0.00 per transcription
+
+================================================================================
+3. OPENAI API - Transcription (Fallback)
+================================================================================
+
+Model: whisper-1
+Pricing: $0.006 / minute of audio
+
+USAGE PER VIDEO:
+- 10 min video = $0.06
+- 30 min video = $0.18
+- 60 min video = $0.36
+
+Note: Only used when Groq rate limits exceeded
+
+================================================================================
+4. OPENAI API - Frame Analysis (Vision)
+================================================================================
+
+Model: gpt-4o
+Pricing:
+- Input: $2.50 / 1M tokens (images ~765 tokens each at 512x512)
+- Output: $10.00 / 1M tokens
+
+USAGE PER VIDEO (30 frames @ 20s intervals):
+- Input: ~30 images × ~1,000 tokens = ~30,000 tokens
+- Output: ~30 frames × ~150 tokens = ~4,500 tokens
+- Cost: ~$0.075 + $0.045 = ~$0.12 per video
+
+================================================================================
+5. HUME AI - Voice Emotion Analysis
+================================================================================
+
+Pricing: $0.015 per 15 seconds of audio
+
+USAGE PER VIDEO:
+- 10 min video = $0.60
+- 30 min video = $1.80
+- 60 min video = $3.60
+
+Note: Most expensive service - use selectively!
+
+================================================================================
+COST SUMMARY PER VIDEO
+================================================================================
+
+BASIC TRANSCRIPTION ONLY (Groq):
+- Groq transcription: FREE
+- Total: $0.00
+
+FULL ANALYSIS (Re-analyze button):
+- Claude API (all 4 analyses): ~$0.077
+- Total: ~$0.08 per video
+
+TRANSCRIBE & ANALYZE (Full features):
+- Groq transcription: FREE
+- Frame extraction + analysis: ~$0.12
+- Emotion analysis: ~$1.80 (30 min avg)
+- Content insights: ~$0.033
+- Total: ~$1.95 per video (with all features)
+
+TRANSCRIBE & ANALYZE (Without emotions):
+- Groq transcription: FREE
+- Frame extraction + analysis: ~$0.12
+- Content insights: ~$0.033
+- Total: ~$0.15 per video
+
+================================================================================
+MONTHLY COST ESTIMATES
+================================================================================
+
+Scenario A: 100 videos/month, basic transcription only
+- Cost: $0.00 (Groq free tier)
+
+Scenario B: 100 videos/month, full re-analysis
+- Cost: 100 × $0.08 = ~$8.00/month
+
+Scenario C: 50 videos/month, full transcribe + analyze (no emotions)
+- Cost: 50 × $0.15 = ~$7.50/month
+
+Scenario D: 50 videos/month, full transcribe + analyze (with emotions)
+- Cost: 50 × $1.95 = ~$97.50/month
+
+================================================================================
+COST OPTIMIZATION TIPS
+================================================================================
+
+1. Use Groq for transcription (free) - only fallback to OpenAI if rate limited
+2. Skip emotion analysis for routine videos - most expensive service
+3. Reduce frame interval (fewer frames = lower vision API costs)
+4. Run re-analysis selectively, not on every video
+5. The new Content Insights feature adds ~$0.033 per video but provides
+   comprehensive multimodal analysis - good value for important videos
+
+================================================================================
+API KEY REQUIREMENTS
+================================================================================
+
+Required:
+- ANTHROPIC_API_KEY (Claude - main AI analysis)
+- GROQ_API_KEY (free transcription)
+
+Optional:
+- OPENAI_API_KEY (fallback transcription + frame analysis)
+- HUME_API_KEY (voice emotion analysis)
+
+================================================================================

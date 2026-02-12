@@ -44,6 +44,15 @@ class Config:
     # YouTube Channel
     YOUTUBE_CHANNEL_ID = os.getenv('YOUTUBE_CHANNEL_ID', '@homesecurityheroes')
 
+    # Preferred brands per silo (used for CTA scoring penalty)
+    # If a video's description/CTA doesn't mention the preferred brand for its silo,
+    # the CTA score gets dinged by 50%
+    PREFERRED_BRANDS = {
+        'identitytheft': 'Aura',
+        'database': 'Aura',
+        'PC': 'Aura',
+    }
+
 
 class DevelopmentConfig(Config):
     """Development configuration."""

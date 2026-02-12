@@ -9,10 +9,12 @@
             <h1 class="mb-0">
                 <i class="fas fa-chart-line"></i> Conversion Audit
             </h1>
-            <a href="{{ url_for('dashboard.conversion_audit_export', channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by=sort_by, sort_dir=sort_dir) }}"
-               class="btn btn-success">
-                <i class="fas fa-file-csv me-1"></i> Export CSV
-            </a>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('dashboard.conversion_audit_export', channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by=sort_by, sort_dir=sort_dir) }}"
+                   class="btn btn-success">
+                    <i class="fas fa-file-csv me-1"></i> Export CSV
+                </a>
+            </div>
         </div>
     </div>
 
@@ -73,14 +75,17 @@
                                     <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
                                         <i class="fas fa-video me-1"></i> Video Info
                                     </th>
-                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
+                                    <th colspan="4" class="text-center border-end" style="border-color:#6c757d !important;">
                                         <i class="fas fa-dollar-sign me-1"></i> Revenue & Traffic (90d Avg)
                                     </th>
                                     <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
                                         <i class="fas fa-mouse-pointer me-1"></i> Click-Through Rates
                                     </th>
-                                    <th colspan="4" class="text-center">
+                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
                                         <i class="fas fa-info-circle me-1"></i> Other
+                                    </th>
+                                    <th colspan="3" class="text-center">
+                                        <i class="fas fa-chart-bar me-1"></i> Brand & CTA
                                     </th>
                                 </tr>
                                 <!-- Column headers -->
@@ -95,13 +100,16 @@
                                     <th class="border-end" style="min-width:80px; border-color:#adb5bd !important;" title="Content silo/category from Digibot_General_info">{{ sort_link('silo', 'Silo') }}</th>
                                     <th class="text-end" style="min-width:110px;" title="Average monthly revenue over the last 90 days. Calculation: AVG(revenue) from Metrics_by_Month where date >= 90 days ago">{{ sort_link('avg_monthly_revenue', 'Avg Rev/mo') }}</th>
                                     <th class="text-end" style="min-width:110px;" title="Average monthly organic views over the last 90 days. Calculation: AVG(organic_views) from Metrics_by_Month where date >= 90 days ago">{{ sort_link('avg_monthly_views', 'Avg Views/mo') }}</th>
+                                    <th class="text-end" style="min-width:70px;" title="Earnings Per Click. Calculation: total revenue / total clicks over last 90 days from Metrics_by_Month">{{ sort_link('epc_90d', 'EPC') }}</th>
                                     <th class="text-end border-end" style="min-width:70px; border-color:#adb5bd !important;" title="Conversion Rate. Calculation: (total sales / total organic views) x 100 over last 90 days from Metrics_by_Month">{{ sort_link('conversion_rate', 'CR %') }}</th>
                                     <th class="text-end" style="min-width:80px;" title="Description Click-Through Rate. Calculation: (description link clicks / total organic views over 90d) x 100. Clicks from Revenue_Metrics where Link_Placement contains 'desc'">{{ sort_link('desc_ctr', 'Desc CTR') }}</th>
-                                    <th class="text-end" style="min-width:80px;" title="Pinned Comment Click-Through Rate. Calculation: (pinned comment clicks / total organic views over 90d) x 100. Clicks from Revenue_Metrics where Link_Placement contains 'pin' or 'comment'">{{ sort_link('pinned_ctr', 'Pinned CTR') }}</th>
+                                    <th class="text-end" style="min-width:80px;" title="Pinned Comment Click-Through Rate. Calculation: (pinned comment clicks / total organic views over 90d) x 100. Clicks from Revenue_Metrics where Link_Placement contains 'yt_pc' or 'pinned'">{{ sort_link('pinned_ctr', 'Pinned CTR') }}</th>
                                     <th class="text-end border-end" style="min-width:90px; border-color:#adb5bd !important;" title="YouTube Thumbnail/Impression CTR. Calculation: AVG(impression_CTR) from Digibot_YT_analytics over last 90 days. This is the % of impressions that led to a video view">{{ sort_link('thumbnail_ctr', 'Thumb CTR') }}</th>
                                     <th style="min-width:50px;" title="YouTube search rank for the video's main keyword. From Rank_domination_score table (latest rank_date). Green=1-3, Yellow=4-10, Grey=11+">{{ sort_link('rank', 'Rank') }}</th>
-                                    <th style="min-width:100px;" title="Top affiliate brand in description links by revenue. From Revenue_Metrics where Link_Placement contains 'desc', ranked by total revenue">Desc Brand</th>
-                                    <th style="min-width:100px;" title="Top affiliate brand in pinned comment links by revenue. From Revenue_Metrics where Link_Placement contains 'pin' or 'comment', ranked by total revenue">Comment Brand</th>
+                                    <th style="min-width:100px;" title="Top affiliate brand in description links by revenue. From Revenue_Metrics where Link_Placement contains 'desc', ranked by total revenue">{{ sort_link('desc_brand', 'Desc Brand') }}</th>
+                                    <th class="border-end" style="min-width:100px; border-color:#adb5bd !important;" title="Top affiliate brand in pinned comment links by revenue. From Revenue_Metrics where Link_Placement contains 'yt_pc' or 'pinned', ranked by total revenue">{{ sort_link('comment_brand', 'Comment Brand') }}</th>
+                                    <th style="min-width:150px;" title="Revenue breakdown by brand (last 90 days) from Revenue_Metrics">Rev by Brand</th>
+                                    <th style="min-width:80px;" title="CTA & Description quality score (1-10) by Claude AI. If preferred brand for silo is missing, score is dinged 50%.">CTA Score</th>
                                     <th style="min-width:180px;" title="First 80 characters of the video description from YT_Video_Registration_V2">Description</th>
                                 </tr>
                             </thead>
@@ -119,53 +127,123 @@
                                     <td class="border-end" style="border-color:#dee2e6 !important;"><small>{{ row.silo or '-' }}</small></td>
                                     <td class="text-end">
                                         {% if row.avg_monthly_revenue > 0 %}
-                                        <span class="{% if row.avg_monthly_revenue >= 1000 %}text-success fw-bold{% elif row.avg_monthly_revenue >= 100 %}text-body{% else %}text-muted{% endif %}">
+                                        <span class="{% if row.avg_monthly_revenue >= 1000 %}text-success fw-bold{% elif row.avg_monthly_revenue >= 100 %}text-body{% else %}text-muted{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Avg Monthly Revenue</b><br>= AVG(revenue) over last 90d<br>= <b>${{ '%.2f'|format(row.avg_monthly_revenue) }}/mo</b>">
                                             ${{ "%.2f"|format(row.avg_monthly_revenue) }}
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td class="text-end">
                                         {% if row.avg_monthly_views > 0 %}
-                                        {{ "{:,}".format(row.avg_monthly_views) }}
+                                        <span style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Avg Monthly Views</b><br>= AVG(organic_views) over last 90d<br>Total views (90d): {{ '{:,}'.format(row.total_views_90d|default(0)|int) }}<br>= <b>{{ '{:,}'.format(row.avg_monthly_views|int) }}/mo</b>">
+                                            {{ "{:,}".format(row.avg_monthly_views) }}
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if row.epc_90d|default(0) > 0 %}
+                                        <span class="{% if row.epc_90d|default(0) >= 5 %}text-success fw-bold{% elif row.epc_90d|default(0) >= 1 %}text-body{% else %}text-muted{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Earnings Per Click (90d)</b><br>= total revenue &divide; total clicks<br>= ${{ '{:,.2f}'.format(row.total_revenue_90d|default(0)) }} &divide; {{ '{:,}'.format(row.total_clicks|default(0)|int) }}<br>= <b>${{ '%.2f'|format(row.epc_90d|default(0)) }}</b>">
+                                            ${{ "%.2f"|format(row.epc_90d|default(0)) }}
+                                        </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td class="text-end border-end" style="border-color:#dee2e6 !important;">
                                         {% if row.conversion_rate > 0 %}
-                                        <span class="badge {% if row.conversion_rate >= 1 %}bg-success{% elif row.conversion_rate >= 0.1 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        <span class="badge {% if row.conversion_rate >= 1 %}bg-success{% elif row.conversion_rate >= 0.1 %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Conversion Rate</b><br>= (sales &divide; organic views) &times; 100<br>= {{ '{:,}'.format(row.total_sales|default(0)|int) }} &divide; {{ '{:,}'.format(row.total_views_90d|default(0)|int) }} &times; 100<br>= <b>{{ '%.3f'|format(row.conversion_rate) }}%</b>">
                                             {{ "%.3f"|format(row.conversion_rate) }}%
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td class="text-end">
                                         {% if row.desc_ctr > 0 %}
-                                        <span class="{% if row.desc_ctr >= 5 %}text-success fw-bold{% elif row.desc_ctr >= 1 %}text-body{% else %}text-muted{% endif %}">
+                                        <span class="{% if row.desc_ctr >= 5 %}text-success fw-bold{% elif row.desc_ctr >= 1 %}text-body{% else %}text-muted{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Description CTR</b><br>= (desc clicks &divide; views 90d) &times; 100<br>= {{ '{:,}'.format(row.desc_clicks|default(0)|int) }} &divide; {{ '{:,}'.format(row.total_views_90d|default(0)|int) }} &times; 100<br>= <b>{{ '%.2f'|format(row.desc_ctr) }}%</b>">
                                             {{ "%.2f"|format(row.desc_ctr) }}%
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td class="text-end">
                                         {% if row.pinned_ctr > 0 %}
-                                        <span class="{% if row.pinned_ctr >= 5 %}text-success fw-bold{% elif row.pinned_ctr >= 1 %}text-body{% else %}text-muted{% endif %}">
+                                        <span class="{% if row.pinned_ctr >= 5 %}text-success fw-bold{% elif row.pinned_ctr >= 1 %}text-body{% else %}text-muted{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Pinned Comment CTR</b><br>= (pinned clicks &divide; views 90d) &times; 100<br>= {{ '{:,}'.format(row.pinned_clicks|default(0)|int) }} &divide; {{ '{:,}'.format(row.total_views_90d|default(0)|int) }} &times; 100<br>= <b>{{ '%.2f'|format(row.pinned_ctr) }}%</b>">
                                             {{ "%.2f"|format(row.pinned_ctr) }}%
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td class="text-end border-end" style="border-color:#dee2e6 !important;">
                                         {% if row.thumbnail_ctr > 0 %}
-                                        <span class="{% if row.thumbnail_ctr >= 5 %}text-success fw-bold{% elif row.thumbnail_ctr >= 2 %}text-body{% else %}text-muted{% endif %}">
+                                        <span class="{% if row.thumbnail_ctr >= 5 %}text-success fw-bold{% elif row.thumbnail_ctr >= 2 %}text-body{% else %}text-muted{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Thumbnail CTR</b><br>= AVG(impression_CTR) over last 90d<br>= <b>{{ '%.2f'|format(row.thumbnail_ctr) }}%</b><br><small>% of impressions &rarr; views</small>">
                                             {{ "%.2f"|format(row.thumbnail_ctr) }}%
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td class="text-center">
                                         {% if row.rank %}
-                                        <span class="badge {% if row.rank <= 3 %}bg-success{% elif row.rank <= 10 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        <span class="badge {% if row.rank <= 3 %}bg-success{% elif row.rank <= 10 %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>YouTube Search Rank</b><br>Keyword: '{{ row.keyword|default('-')|e }}'<br>= <b>#{{ row.rank }}</b>{% if row.rank_date|default('') %}<br>Date: {{ row.rank_date }}{% endif %}">
                                             {{ row.rank }}
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                     <td><small>{{ row.desc_brand or '-' }}</small></td>
-                                    <td><small>{{ row.comment_brand or '-' }}</small></td>
+                                    <td class="border-end" style="border-color:#dee2e6 !important;">
+                                        {% if row.pinned_text %}
+                                        <small class="text-decoration-underline" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                            title="<b>{{ row.pinned_author|e }}</b><br>{{ row.pinned_text[:150]|e }}{% if row.pinned_text|length > 150 %}...{% endif %}">
+                                            {{ row.comment_brand or '-' }}
+                                        </small>
+                                        <i class="fas fa-thumbtack text-warning ms-1" style="font-size:0.6rem;" title="Pinned comment found"></i>
+                                        {% elif row.has_yt_comments %}
+                                        <small>{{ row.comment_brand or '-' }}</small>
+                                        <i class="fas fa-check-circle text-success ms-1" style="font-size:0.6rem;" title="Comments fetched"></i>
+                                        {% else %}
+                                        <small>{{ row.comment_brand or '-' }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <!-- Rev by Brand -->
+                                    <td>
+                                        {% if row.brand_revenue|default([]) %}
+                                        <div style="font-size:0.72rem; line-height:1.4;">
+                                            {% for br in (row.brand_revenue|default([]))[:4] %}
+                                            <div class="d-flex justify-content-between">
+                                                <span class="text-truncate me-1 {% if row.preferred_brand|default('') and br.brand|lower == row.preferred_brand|default('')|lower %}fw-bold text-success{% endif %}" style="max-width:80px;" title="{{ br.brand }}">{{ br.brand }}</span>
+                                                <span class="text-muted">${{ "%.0f"|format(br.revenue) }}</span>
+                                            </div>
+                                            {% endfor %}
+                                            {% if (row.brand_revenue|default([]))|length > 4 %}
+                                            <small class="text-muted">+{{ (row.brand_revenue|default([]))|length - 4 }} more</small>
+                                            {% endif %}
+                                        </div>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <!-- CTA Score -->
+                                    <td class="text-center">
+                                        {% if row.cta_audit|default(none) %}
+                                        {% set score = row.cta_audit %}
+                                        <span class="badge {% if score.adjusted_score >= 7 %}bg-success{% elif score.adjusted_score >= 4 %}bg-warning text-dark{% else %}bg-danger{% endif %}" style="cursor:help; font-size:0.8rem;"
+                                            data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                            title="<b>CTA Score</b><br>CTA: {{ '%.1f'|format(score.cta_score) }}/10<br>Desc: {{ '%.1f'|format(score.description_score) }}/10<br>Base: {{ '%.1f'|format(score.base_score) }}/10{% if row.preferred_brand|default('') %}<br><br>Preferred brand: <b>{{ row.preferred_brand }}</b><br>{% if score.has_preferred_brand %}<span class='text-success'>✓ Found in description</span>{% else %}<span class='text-danger'>✗ Missing → 50% penalty</span>{% endif %}{% endif %}<br><br>{{ score.scoring_reasoning|e }}">
+                                            {{ "%.1f"|format(score.adjusted_score) }}
+                                            {% if row.preferred_brand|default('') and not score.has_preferred_brand %}
+                                            <i class="fas fa-arrow-down ms-1" style="font-size:0.55rem;" title="Preferred brand missing"></i>
+                                            {% endif %}
+                                        </span>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if row.description %}
                                         <small style="font-size:0.75rem;">{{ row.description[:80] }}{% if row.description|length > 80 %}...{% endif %}</small>
@@ -261,18 +339,19 @@
                                 <div class="row text-center mb-3">
                                     <div class="col-6">
                                         <div class="text-muted small">Avg Revenue/mo</div>
-                                        <div class="fs-4 fw-bold text-success" id="modalRevenue"></div>
+                                        <div class="fs-4 fw-bold text-success" id="modalRevenue" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title=""></div>
                                     </div>
                                     <div class="col-6">
                                         <div class="text-muted small">Avg Views/mo</div>
-                                        <div class="fs-4 fw-bold" id="modalViews"></div>
+                                        <div class="fs-4 fw-bold" id="modalViews" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title=""></div>
                                     </div>
                                 </div>
                                 <hr>
                                 <table class="table table-sm mb-0">
-                                    <tr><th class="text-muted" style="width:50%;">Conversion Rate</th><td class="text-end"><span id="modalCR" class="badge"></span></td></tr>
-                                    <tr><th class="text-muted">Total Clicks (90d)</th><td class="text-end" id="modalClicks"></td></tr>
-                                    <tr><th class="text-muted">Total Sales (90d)</th><td class="text-end" id="modalSales"></td></tr>
+                                    <tr><th class="text-muted" style="width:50%;">EPC (90d)</th><td class="text-end"><span id="modalEPC" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span></td></tr>
+                                    <tr><th class="text-muted">Conversion Rate</th><td class="text-end"><span id="modalCR" class="badge" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span></td></tr>
+                                    <tr><th class="text-muted">Total Clicks (90d)</th><td class="text-end"><span id="modalClicks" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span></td></tr>
+                                    <tr><th class="text-muted">Total Sales (90d)</th><td class="text-end"><span id="modalSales" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span></td></tr>
                                 </table>
                             </div>
                         </div>
@@ -288,7 +367,7 @@
                                 <div class="mb-3">
                                     <div class="d-flex justify-content-between mb-1">
                                         <span class="small">Description CTR</span>
-                                        <span class="fw-bold" id="modalDescCTR"></span>
+                                        <span class="fw-bold" id="modalDescCTR" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span>
                                     </div>
                                     <div class="progress" style="height:8px;">
                                         <div class="progress-bar bg-info" id="modalDescCTRBar" style="width:0%"></div>
@@ -297,7 +376,7 @@
                                 <div class="mb-3">
                                     <div class="d-flex justify-content-between mb-1">
                                         <span class="small">Pinned Comment CTR</span>
-                                        <span class="fw-bold" id="modalPinnedCTR"></span>
+                                        <span class="fw-bold" id="modalPinnedCTR" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span>
                                     </div>
                                     <div class="progress" style="height:8px;">
                                         <div class="progress-bar bg-warning" id="modalPinnedCTRBar" style="width:0%"></div>
@@ -306,7 +385,7 @@
                                 <div class="mb-3">
                                     <div class="d-flex justify-content-between mb-1">
                                         <span class="small">Thumbnail CTR</span>
-                                        <span class="fw-bold" id="modalThumbCTR"></span>
+                                        <span class="fw-bold" id="modalThumbCTR" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true" title=""></span>
                                     </div>
                                     <div class="progress" style="height:8px;">
                                         <div class="progress-bar bg-success" id="modalThumbCTRBar" style="width:0%"></div>
@@ -315,9 +394,93 @@
                                 <div class="mt-3 p-2 bg-light rounded">
                                     <small class="text-muted">
                                         <i class="fas fa-search me-1"></i>
-                                        YouTube Rank: <strong id="modalRank">-</strong>
+                                        YouTube Rank: <strong id="modalRank" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-html="true" title="">-</strong>
                                     </small>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Brand Revenue Breakdown -->
+                    <div class="col-md-6 col-lg-4" id="modalBrandRevenueCard" style="display:none;">
+                        <div class="card h-100 border-dark">
+                            <div class="card-header bg-dark text-white py-2">
+                                <i class="fas fa-chart-pie me-1"></i> Revenue by Brand (90d)
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm table-hover mb-0" id="modalBrandTable">
+                                    <thead>
+                                        <tr class="table-light">
+                                            <th class="ps-3" style="font-size:0.8rem;">Brand</th>
+                                            <th class="text-end" style="font-size:0.8rem;">Revenue</th>
+                                            <th class="text-end pe-3" style="font-size:0.8rem;">Share</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="modalBrandRows"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CTA Score -->
+                    <div class="col-md-6 col-lg-4" id="modalCTACard">
+                        <div class="card h-100 border-purple" style="border-color:#6f42c1 !important;">
+                            <div class="card-header text-white py-2" style="background:#6f42c1;">
+                                <i class="fas fa-robot me-1"></i> CTA & Description Score
+                            </div>
+                            <div class="card-body">
+                                <!-- Score results (shown when scored) -->
+                                <div id="modalCTAResults" style="display:none;">
+                                    <div class="row text-center mb-3">
+                                        <div class="col-4">
+                                            <div class="text-muted small">CTA</div>
+                                            <div class="fs-4 fw-bold" id="modalCTAScoreVal" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                                title="<b>CTA Effectiveness (1-10)</b><br>Scored by Claude AI on:<br>&bull; Urgency &amp; clarity of CTAs<br>&bull; Number &amp; placement of CTAs<br>&bull; Link visibility<br>&bull; Discount/offer mentions">-</div>
+                                            <small class="text-muted">/10</small>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="text-muted small">Description</div>
+                                            <div class="fs-4 fw-bold" id="modalDescScoreVal" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                                title="<b>Description Quality (1-10)</b><br>Scored by Claude AI on:<br>&bull; First-fold link placement<br>&bull; Benefit-driven copy<br>&bull; Trust signals<br>&bull; Keyword usage &amp; link formatting">-</div>
+                                            <small class="text-muted">/10</small>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="text-muted small">Adjusted</div>
+                                            <div class="fs-4 fw-bold" id="modalAdjustedScore" style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                                title="">-</div>
+                                            <small class="text-muted">/10</small>
+                                        </div>
+                                    </div>
+                                    <hr>
+                                    <div id="modalPreferredBrandInfo" style="display:none;" class="mb-2">
+                                        <small class="text-muted">Preferred brand:</small>
+                                        <span class="fw-bold" id="modalPreferredBrandName"></span>
+                                        <span id="modalPreferredBrandStatus"></span>
+                                    </div>
+                                    <div class="p-2 bg-light rounded" style="font-size:0.82rem;" id="modalCTAReasoning">-</div>
+                                </div>
+                                <!-- Score button (shown when not scored) -->
+                                <div id="modalCTAUnscored" class="text-center py-4">
+                                    <p class="text-muted mb-3">No CTA score yet for this video.</p>
+                                    <button id="modalScoreBtn" class="btn btn-purple text-white" style="background:#6f42c1; border-color:#6f42c1;">
+                                        <i class="fas fa-robot me-1"></i> Score with Claude AI
+                                    </button>
+                                    <div class="mt-2"><small class="text-muted">~$0.01 per video</small></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pinned Comment -->
+                    <div class="col-12" id="modalPinnedCommentCard" style="display:none;">
+                        <div class="card border-warning">
+                            <div class="card-header bg-warning text-dark py-2">
+                                <i class="fas fa-thumbtack me-1"></i> Pinned Comment
+                                <small class="ms-2 text-dark" id="modalPinnedAuthor"></small>
+                            </div>
+                            <div class="card-body">
+                                <pre id="modalPinnedText" class="mb-2" style="white-space:pre-wrap; font-family:inherit; font-size:0.85rem; max-height:200px; overflow-y:auto;"></pre>
+                                <div id="modalPinnedLinks"></div>
                             </div>
                         </div>
                     </div>
@@ -379,12 +542,18 @@
 </style>
 
 <script type="application/json" id="auditRowData">{{ audit_data|tojson }}</script>
+<script type="application/json" id="preferredBrandsData">{{ preferred_brands|tojson }}</script>
 {% endblock %}
 
 {% block extra_js %}
 <script>
     // Store row data as JSON to avoid data-attribute quote/encoding issues
     const auditRows = JSON.parse(document.getElementById('auditRowData').textContent);
+
+    // Initialize Bootstrap tooltips for pinned comment previews
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el, { container: 'body' });
+    });
 
     // Open fullscreen modal on row click
     const modal = new bootstrap.Modal(document.getElementById('auditDetailModal'));
@@ -408,37 +577,178 @@
             document.getElementById('modalViewDetail').href = '/videos/' + d.video_id;
             document.getElementById('modalYouTube').href = 'https://www.youtube.com/watch?v=' + d.video_id;
 
-            // Revenue
+            // Helper to set tooltip on an element
+            function setTip(id, text, val) {
+                const el = document.getElementById(id);
+                if (val !== undefined) el.textContent = val;
+                // Dispose existing tooltip, set new one
+                const existing = bootstrap.Tooltip.getInstance(el);
+                if (existing) existing.dispose();
+                el.setAttribute('title', text);
+                new bootstrap.Tooltip(el, { container: 'body', html: true });
+            }
+
+            // Revenue & Traffic
             const rev = parseFloat(d.avg_monthly_revenue) || 0;
             const views = parseInt(d.avg_monthly_views) || 0;
             const cr = parseFloat(d.conversion_rate) || 0;
             const clicks = parseInt(d.total_clicks) || 0;
             const sales = parseInt(d.total_sales) || 0;
+            const epc = parseFloat(d.epc_90d) || 0;
+            const totalRev90 = parseFloat(d.total_revenue_90d) || 0;
+            const totalViews90 = parseInt(d.total_views_90d) || 0;
 
-            document.getElementById('modalRevenue').textContent = '$' + rev.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-            document.getElementById('modalViews').textContent = views.toLocaleString();
-            document.getElementById('modalClicks').textContent = clicks.toLocaleString();
-            document.getElementById('modalSales').textContent = sales.toLocaleString();
+            setTip('modalRevenue',
+                '<b>Avg Monthly Revenue</b><br>= AVG(revenue) over last 90d<br>from Metrics_by_Month<br>= <b>$' + rev.toFixed(2) + '/mo</b>',
+                '$' + rev.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}));
+
+            setTip('modalViews',
+                '<b>Avg Monthly Views</b><br>= AVG(organic_views) over last 90d<br>Total views (90d): ' + totalViews90.toLocaleString() + '<br>= <b>' + views.toLocaleString() + '/mo</b>',
+                views.toLocaleString());
+
+            setTip('modalEPC',
+                '<b>Earnings Per Click (90d)</b><br>= total revenue &divide; total clicks<br>= $' + totalRev90.toFixed(2) + ' &divide; ' + clicks.toLocaleString() + '<br>= <b>$' + epc.toFixed(2) + '</b>',
+                epc > 0 ? '$' + epc.toFixed(2) : '-');
+
+            setTip('modalClicks',
+                '<b>Total Clicks (90d)</b><br>= SUM(clicks) from Revenue_Metrics<br>over last 90 days<br>= <b>' + clicks.toLocaleString() + '</b>',
+                clicks.toLocaleString());
+
+            setTip('modalSales',
+                '<b>Total Sales (90d)</b><br>= SUM(sales) from Metrics_by_Month<br>over last 90 days<br>= <b>' + sales.toLocaleString() + '</b>',
+                sales.toLocaleString());
 
             const crBadge = document.getElementById('modalCR');
             crBadge.textContent = cr.toFixed(3) + '%';
             crBadge.className = 'badge ' + (cr >= 1 ? 'bg-success' : cr >= 0.1 ? 'bg-warning text-dark' : 'bg-secondary');
+            const existingCR = bootstrap.Tooltip.getInstance(crBadge);
+            if (existingCR) existingCR.dispose();
+            crBadge.setAttribute('title', '<b>Conversion Rate</b><br>= (sales &divide; organic views) &times; 100<br>= ' + sales.toLocaleString() + ' &divide; ' + totalViews90.toLocaleString() + ' &times; 100<br>= <b>' + cr.toFixed(3) + '%</b>');
+            new bootstrap.Tooltip(crBadge, { container: 'body', html: true });
 
-            // CTR
+            // CTR with tooltips
             const descCtr = parseFloat(d.desc_ctr) || 0;
             const pinnedCtr = parseFloat(d.pinned_ctr) || 0;
             const thumbCtr = parseFloat(d.thumbnail_ctr) || 0;
+            const descClicks = parseInt(d.desc_clicks) || 0;
+            const pinnedClicks = parseInt(d.pinned_clicks) || 0;
 
-            document.getElementById('modalDescCTR').textContent = descCtr > 0 ? descCtr.toFixed(2) + '%' : '-';
+            setTip('modalDescCTR',
+                '<b>Description CTR</b><br>= (desc clicks &divide; views 90d) &times; 100<br>= ' + descClicks.toLocaleString() + ' &divide; ' + totalViews90.toLocaleString() + ' &times; 100<br>= <b>' + descCtr.toFixed(2) + '%</b>',
+                descCtr > 0 ? descCtr.toFixed(2) + '%' : '-');
             document.getElementById('modalDescCTRBar').style.width = Math.min(descCtr * 5, 100) + '%';
-            document.getElementById('modalPinnedCTR').textContent = pinnedCtr > 0 ? pinnedCtr.toFixed(2) + '%' : '-';
+
+            setTip('modalPinnedCTR',
+                '<b>Pinned Comment CTR</b><br>= (pinned clicks &divide; views 90d) &times; 100<br>= ' + pinnedClicks.toLocaleString() + ' &divide; ' + totalViews90.toLocaleString() + ' &times; 100<br>= <b>' + pinnedCtr.toFixed(2) + '%</b>',
+                pinnedCtr > 0 ? pinnedCtr.toFixed(2) + '%' : '-');
             document.getElementById('modalPinnedCTRBar').style.width = Math.min(pinnedCtr * 5, 100) + '%';
-            document.getElementById('modalThumbCTR').textContent = thumbCtr > 0 ? thumbCtr.toFixed(2) + '%' : '-';
+
+            setTip('modalThumbCTR',
+                '<b>Thumbnail CTR</b><br>= AVG(impression_CTR) over last 90d<br>= <b>' + thumbCtr.toFixed(2) + '%</b><br><small>% of impressions &rarr; views</small>',
+                thumbCtr > 0 ? thumbCtr.toFixed(2) + '%' : '-');
             document.getElementById('modalThumbCTRBar').style.width = Math.min(thumbCtr * 5, 100) + '%';
 
-            // Rank
+            // Rank with date
             const rank = d.rank;
-            document.getElementById('modalRank').textContent = rank ? '#' + rank : '-';
+            const rankDate = d.rank_date || '';
+            setTip('modalRank',
+                '<b>YouTube Search Rank</b><br>Keyword: \'' + (d.keyword || '-') + '\'' + (rankDate ? '<br>Date: ' + rankDate : '') + '<br>= <b>#' + (rank || '-') + '</b>',
+                rank ? '#' + rank : '-');
+
+            // Brand Revenue card
+            const brandCard = document.getElementById('modalBrandRevenueCard');
+            const brandRows = document.getElementById('modalBrandRows');
+            const brands = d.brand_revenue || [];
+            if (brands.length > 0) {
+                brandCard.style.display = '';
+                brandRows.innerHTML = '';
+                const totalBrandRev = brands.reduce((s, b) => s + (b.revenue || 0), 0);
+                const prefBrand = (d.preferred_brand || '').toLowerCase();
+                brands.forEach(function(b) {
+                    const share = totalBrandRev > 0 ? ((b.revenue / totalBrandRev) * 100).toFixed(1) : '0.0';
+                    const isPref = prefBrand && b.brand.toLowerCase() === prefBrand;
+                    const tr = document.createElement('tr');
+                    if (isPref) tr.className = 'table-success';
+                    tr.innerHTML = '<td class="ps-3" style="font-size:0.82rem;">' +
+                        (isPref ? '<i class="fas fa-star text-success me-1" style="font-size:0.6rem;"></i>' : '') +
+                        '<span class="' + (isPref ? 'fw-bold' : '') + '">' + b.brand + '</span></td>' +
+                        '<td class="text-end" style="font-size:0.82rem;">$' + b.revenue.toFixed(2) + '</td>' +
+                        '<td class="text-end pe-3" style="font-size:0.82rem;">' + share + '%</td>';
+                    brandRows.appendChild(tr);
+                });
+            } else {
+                brandCard.style.display = 'none';
+            }
+
+            // CTA Score card - always visible
+            const cta = d.cta_audit;
+            const ctaResults = document.getElementById('modalCTAResults');
+            const ctaUnscored = document.getElementById('modalCTAUnscored');
+            if (cta) {
+                ctaResults.style.display = '';
+                ctaUnscored.style.display = 'none';
+                document.getElementById('modalCTAScoreVal').textContent = parseFloat(cta.cta_score).toFixed(1);
+                document.getElementById('modalDescScoreVal').textContent = parseFloat(cta.description_score).toFixed(1);
+                const adjScore = parseFloat(cta.adjusted_score);
+                const baseScore = parseFloat(cta.base_score);
+                const adjEl = document.getElementById('modalAdjustedScore');
+                adjEl.textContent = adjScore.toFixed(1);
+                adjEl.className = 'fs-4 fw-bold ' + (adjScore >= 7 ? 'text-success' : adjScore >= 4 ? 'text-warning' : 'text-danger');
+
+                // Adjusted score tooltip with calculation
+                let adjTip = '<b>Adjusted Score</b><br>= AVG(CTA, Desc) = (' + parseFloat(cta.cta_score).toFixed(1) + ' + ' + parseFloat(cta.description_score).toFixed(1) + ') / 2 = <b>' + baseScore.toFixed(1) + '</b>';
+                if (d.preferred_brand && !cta.has_preferred_brand) {
+                    adjTip += '<br><br><span class="text-danger">Preferred brand "' + d.preferred_brand + '" missing</span><br>50% penalty: ' + baseScore.toFixed(1) + ' &times; 0.5 = <b>' + adjScore.toFixed(1) + '</b>';
+                } else if (d.preferred_brand && cta.has_preferred_brand) {
+                    adjTip += '<br><br><span class="text-success">Preferred brand "' + d.preferred_brand + '" found</span><br>No penalty applied';
+                }
+                setTip('modalAdjustedScore', adjTip);
+
+                const prefInfo = document.getElementById('modalPreferredBrandInfo');
+                const prefBrandName = d.preferred_brand || '';
+                if (prefBrandName) {
+                    prefInfo.style.display = '';
+                    document.getElementById('modalPreferredBrandName').textContent = prefBrandName;
+                    const statusEl = document.getElementById('modalPreferredBrandStatus');
+                    if (cta.has_preferred_brand) {
+                        statusEl.innerHTML = ' <span class="badge bg-success"><i class="fas fa-check"></i> Found</span>';
+                    } else {
+                        statusEl.innerHTML = ' <span class="badge bg-danger"><i class="fas fa-times"></i> Missing (50% penalty)</span>';
+                    }
+                } else {
+                    prefInfo.style.display = 'none';
+                }
+                document.getElementById('modalCTAReasoning').textContent = cta.scoring_reasoning || '-';
+            } else {
+                ctaResults.style.display = 'none';
+                ctaUnscored.style.display = '';
+            }
+
+            // Store current row index for modal score button
+            document.getElementById('modalScoreBtn').dataset.idx = idx;
+
+            // Pinned Comment
+            const pinnedCard = document.getElementById('modalPinnedCommentCard');
+            if (d.pinned_text) {
+                pinnedCard.style.display = '';
+                document.getElementById('modalPinnedText').textContent = d.pinned_text;
+                document.getElementById('modalPinnedAuthor').textContent = d.pinned_author ? ('by ' + d.pinned_author) : '';
+                const linksDiv = document.getElementById('modalPinnedLinks');
+                linksDiv.innerHTML = '';
+                if (d.pinned_links && d.pinned_links.length) {
+                    d.pinned_links.forEach(function(link) {
+                        const a = document.createElement('a');
+                        a.href = link;
+                        a.target = '_blank';
+                        a.className = 'badge bg-light text-primary me-1 mb-1 text-decoration-none';
+                        a.style.fontSize = '0.75rem';
+                        a.textContent = link.length > 50 ? link.substring(0, 50) + '...' : link;
+                        linksDiv.appendChild(a);
+                    });
+                }
+            } else {
+                pinnedCard.style.display = 'none';
+            }
 
             // Description
             document.getElementById('modalDescription').textContent = d.description || 'No description available';
@@ -461,5 +771,49 @@
         if (searchTimeout) clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => { this.closest('form').submit(); }, 600);
     });
+
+    // ==================== CTA SCORING (from modal) ====================
+
+    document.getElementById('modalScoreBtn').addEventListener('click', function() {
+        const idx = parseInt(this.dataset.idx);
+        const d = auditRows[idx];
+        if (!d) return;
+
+        this.disabled = true;
+        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Scoring...';
+        const btn = this;
+
+        fetch('/api/v1/cta-score', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                videos: [{
+                    video_id: d.video_id,
+                    title: d.title,
+                    description: d.description,
+                    silo: d.silo,
+                    keyword: d.keyword,
+                    desc_brand: d.desc_brand,
+                    comment_brand: d.comment_brand
+                }]
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'completed' && data.scores && data.scores[d.video_id]) {
+                location.reload();
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-robot me-1"></i> Score with Claude AI';
+                alert('Scoring failed: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-robot me-1"></i> Score with Claude AI';
+            alert('Error: ' + err.message);
+        });
+    });
+
 </script>
 {% endblock %}

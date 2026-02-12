@@ -204,7 +204,26 @@ class LocalDBService:
         )
         """)
 
-        # Table 6: Transcript History
+        # Table 6: Video Comments (from YouTube Data API)
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS video_comments (
+            id {auto_id},
+            video_id TEXT NOT NULL,
+            comment_id TEXT NOT NULL UNIQUE,
+            comment_text TEXT,
+            author_name TEXT,
+            author_channel_id TEXT,
+            like_count {int_type} DEFAULT 0,
+            is_pinned {int_type} DEFAULT 0,
+            is_channel_owner {int_type} DEFAULT 0,
+            published_at TEXT,
+            links_found TEXT,
+            brands_detected TEXT,
+            fetched_at TEXT NOT NULL
+        )
+        """)
+
+        # Table 7: Transcript History
         cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS video_transcripts_history (
             id {auto_id},
@@ -228,6 +247,22 @@ class LocalDBService:
         )
         """)
 
+        # Table 8: CTA Audit Scores (for conversion audit page)
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS cta_audit_scores (
+            id {auto_id},
+            video_id TEXT NOT NULL UNIQUE,
+            cta_score {real_type},
+            description_score {real_type},
+            base_score {real_type},
+            has_preferred_brand {int_type} DEFAULT 0,
+            preferred_brand TEXT,
+            adjusted_score {real_type},
+            scoring_reasoning TEXT,
+            scored_at TEXT NOT NULL
+        )
+        """)
+
         # Create indexes (syntax is the same for both)
         indexes = [
             ("idx_script_video_id", "script_analysis", "video_id"),
@@ -236,6 +271,8 @@ class LocalDBService:
             ("idx_conversion_video_id", "conversion_analysis", "video_id"),
             ("idx_transcript_video_id", "video_transcripts", "video_id"),
             ("idx_transcript_history_video_id", "video_transcripts_history", "video_id"),
+            ("idx_comments_video_id", "video_comments", "video_id"),
+            ("idx_cta_audit_video_id", "cta_audit_scores", "video_id"),
         ]
 
         for idx_name, table, column in indexes:
@@ -1008,3 +1045,277 @@ class LocalDBService:
         except Exception as e:
             logger.error(f"Error updating content_insights: {str(e)}")
             return False
+
+    # ==================== VIDEO COMMENTS METHODS ====================
+
+    def store_comments(self, comments: list) -> int:
+        """Store video comments fetched from YouTube API.
+
+        Args:
+            comments: List of dicts with keys: video_id, comment_id, comment_text,
+                      author_name, author_channel_id, like_count, is_pinned,
+                      is_channel_owner, published_at, links_found, brands_detected
+
+        Returns:
+            Number of comments stored
+        """
+        if not comments:
+            return 0
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            p = self._get_placeholder()
+            now = datetime.now().isoformat()
+            stored = 0
+
+            for c in comments:
+                if self.use_postgres:
+                    query = f"""
+                    INSERT INTO video_comments (
+                        video_id, comment_id, comment_text, author_name,
+                        author_channel_id, like_count, is_pinned, is_channel_owner,
+                        published_at, links_found, brands_detected, fetched_at
+                    ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                    ON CONFLICT (comment_id) DO UPDATE SET
+                        comment_text = EXCLUDED.comment_text,
+                        like_count = EXCLUDED.like_count,
+                        is_pinned = EXCLUDED.is_pinned,
+                        links_found = EXCLUDED.links_found,
+                        brands_detected = EXCLUDED.brands_detected,
+                        fetched_at = EXCLUDED.fetched_at
+                    """
+                else:
+                    query = f"""
+                    INSERT OR REPLACE INTO video_comments (
+                        video_id, comment_id, comment_text, author_name,
+                        author_channel_id, like_count, is_pinned, is_channel_owner,
+                        published_at, links_found, brands_detected, fetched_at
+                    ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                    """
+
+                cursor.execute(query, (
+                    c['video_id'],
+                    c['comment_id'],
+                    c.get('comment_text', ''),
+                    c.get('author_name', ''),
+                    c.get('author_channel_id', ''),
+                    c.get('like_count', 0),
+                    1 if c.get('is_pinned') else 0,
+                    1 if c.get('is_channel_owner') else 0,
+                    c.get('published_at', ''),
+                    json.dumps(c.get('links_found', [])),
+                    json.dumps(c.get('brands_detected', [])),
+                    now
+                ))
+                stored += 1
+
+            conn.commit()
+            conn.close()
+            logger.info(f"Stored {stored} comments for video {comments[0]['video_id']}")
+            return stored
+
+        except Exception as e:
+            logger.error(f"Error storing comments: {str(e)}")
+            return 0
+
+    def get_comments(self, video_id: str) -> list:
+        """Get all stored comments for a video."""
+        try:
+            rows = self._execute_query("""
+            SELECT * FROM video_comments
+            WHERE video_id = ?
+            ORDER BY is_pinned DESC, like_count DESC
+            """, (video_id,), fetch='all')
+
+            results = []
+            for row in (rows or []):
+                r = dict(row)
+                r['links_found'] = json.loads(r['links_found']) if r.get('links_found') else []
+                r['brands_detected'] = json.loads(r['brands_detected']) if r.get('brands_detected') else []
+                r['is_pinned'] = bool(r.get('is_pinned'))
+                r['is_channel_owner'] = bool(r.get('is_channel_owner'))
+                results.append(r)
+            return results
+
+        except Exception as e:
+            logger.error(f"Error fetching comments: {str(e)}")
+            return []
+
+    def get_pinned_comment(self, video_id: str) -> Optional[dict]:
+        """Get the pinned comment for a video (if any)."""
+        try:
+            row = self._execute_query("""
+            SELECT * FROM video_comments
+            WHERE video_id = ? AND is_pinned = 1
+            LIMIT 1
+            """, (video_id,), fetch='one')
+
+            if row:
+                r = dict(row)
+                r['links_found'] = json.loads(r['links_found']) if r.get('links_found') else []
+                r['brands_detected'] = json.loads(r['brands_detected']) if r.get('brands_detected') else []
+                r['is_pinned'] = bool(r.get('is_pinned'))
+                r['is_channel_owner'] = bool(r.get('is_channel_owner'))
+                return r
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching pinned comment: {str(e)}")
+            return None
+
+    def get_comments_summary(self, video_ids: list = None) -> dict:
+        """Get comment summary (pinned comment brand, text, links) for multiple videos.
+
+        Returns:
+            Dict mapping video_id -> {pinned_brand, pinned_text, pinned_links, has_comments}
+        """
+        try:
+            if video_ids:
+                placeholders = ','.join(['?' for _ in video_ids])
+                rows = self._execute_query(f"""
+                SELECT video_id, comment_text, brands_detected, links_found,
+                       is_pinned, is_channel_owner, author_name
+                FROM video_comments
+                WHERE video_id IN ({placeholders}) AND is_pinned = 1
+                """, tuple(video_ids), fetch='all')
+            else:
+                rows = self._execute_query("""
+                SELECT video_id, comment_text, brands_detected, links_found,
+                       is_pinned, is_channel_owner, author_name
+                FROM video_comments
+                WHERE is_pinned = 1
+                """, fetch='all')
+
+            summary = {}
+            for row in (rows or []):
+                vid = row['video_id']
+                brands = json.loads(row['brands_detected']) if row.get('brands_detected') else []
+                links = json.loads(row['links_found']) if row.get('links_found') else []
+                summary[vid] = {
+                    'pinned_brand': brands[0] if brands else None,
+                    'pinned_text': row.get('comment_text', ''),
+                    'pinned_author': row.get('author_name', ''),
+                    'pinned_links': links,
+                    'has_comments': True
+                }
+            return summary
+
+        except Exception as e:
+            logger.error(f"Error fetching comments summary: {str(e)}")
+            return {}
+
+    def has_comments(self, video_id: str) -> bool:
+        """Check if comments have been fetched for a video."""
+        try:
+            row = self._execute_query(
+                "SELECT 1 FROM video_comments WHERE video_id = ? LIMIT 1",
+                (video_id,),
+                fetch='one'
+            )
+            return row is not None
+        except Exception as e:
+            logger.error(f"Error checking comments: {str(e)}")
+            return False
+
+    def delete_comments(self, video_id: str) -> bool:
+        """Delete all comments for a video (for re-fetching)."""
+        try:
+            self._execute_query(
+                "DELETE FROM video_comments WHERE video_id = ?",
+                (video_id,)
+            )
+            logger.info(f"Deleted comments for video {video_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting comments: {str(e)}")
+            return False
+
+    # ==================== CTA AUDIT SCORE METHODS ====================
+
+    def store_cta_audit_score(self, video_id: str, cta_score: float,
+                              description_score: float, base_score: float,
+                              has_preferred_brand: bool, preferred_brand: str,
+                              adjusted_score: float, scoring_reasoning: str) -> bool:
+        """Store or update CTA audit score for a video."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            p = self._get_placeholder()
+            now = datetime.now().isoformat()
+
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO cta_audit_scores (
+                    video_id, cta_score, description_score, base_score,
+                    has_preferred_brand, preferred_brand, adjusted_score,
+                    scoring_reasoning, scored_at
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                ON CONFLICT (video_id) DO UPDATE SET
+                    cta_score = EXCLUDED.cta_score,
+                    description_score = EXCLUDED.description_score,
+                    base_score = EXCLUDED.base_score,
+                    has_preferred_brand = EXCLUDED.has_preferred_brand,
+                    preferred_brand = EXCLUDED.preferred_brand,
+                    adjusted_score = EXCLUDED.adjusted_score,
+                    scoring_reasoning = EXCLUDED.scoring_reasoning,
+                    scored_at = EXCLUDED.scored_at
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO cta_audit_scores (
+                    video_id, cta_score, description_score, base_score,
+                    has_preferred_brand, preferred_brand, adjusted_score,
+                    scoring_reasoning, scored_at
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                """
+
+            cursor.execute(query, (
+                video_id, cta_score, description_score, base_score,
+                1 if has_preferred_brand else 0, preferred_brand or '',
+                adjusted_score, scoring_reasoning or '', now
+            ))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"Stored CTA audit score for video {video_id}: {adjusted_score}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error storing CTA audit score: {str(e)}")
+            return False
+
+    def get_cta_audit_scores(self, video_ids: list) -> dict:
+        """Get CTA audit scores for multiple videos.
+
+        Returns:
+            Dict mapping video_id -> {cta_score, description_score, base_score,
+                                      has_preferred_brand, preferred_brand,
+                                      adjusted_score, scoring_reasoning, scored_at}
+        """
+        if not video_ids:
+            return {}
+        try:
+            placeholders = ','.join(['?' for _ in video_ids])
+            rows = self._execute_query(f"""
+            SELECT * FROM cta_audit_scores
+            WHERE video_id IN ({placeholders})
+            """, tuple(video_ids), fetch='all')
+
+            result = {}
+            for row in (rows or []):
+                result[row['video_id']] = {
+                    'cta_score': row['cta_score'],
+                    'description_score': row['description_score'],
+                    'base_score': row['base_score'],
+                    'has_preferred_brand': bool(row['has_preferred_brand']),
+                    'preferred_brand': row['preferred_brand'],
+                    'adjusted_score': row['adjusted_score'],
+                    'scoring_reasoning': row['scoring_reasoning'],
+                    'scored_at': row['scored_at'],
+                }
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching CTA audit scores: {str(e)}")
+            return {}
