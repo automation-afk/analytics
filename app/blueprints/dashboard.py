@@ -234,7 +234,7 @@ def conversion_audit_export():
             row['desc_ctr'],
             row['pinned_ctr'],
             row['thumbnail_ctr'],
-            row['description'][:500] if row['description'] else ''
+            row['description'][:500].replace('\n', ' ').replace('\r', '') if row['description'] else ''
         ])
 
     csv_content = output.getvalue()

@@ -66,70 +66,69 @@
                 <div class="card-body p-0">
                     {% if audit_data %}
                     <div class="table-responsive">
-                        <table class="table table-hover table-sm mb-0" id="auditTable">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th class="sticky-col" style="min-width:250px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='title', sort_dir='asc' if sort_by == 'title' and sort_dir == 'asc' else 'desc' if sort_by == 'title' else 'asc') }}" class="text-white text-decoration-none">
-                                            Title {% if sort_by == 'title' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
+                        <table class="table table-hover table-sm table-bordered mb-0" id="auditTable">
+                            <thead>
+                                <!-- Group headers -->
+                                <tr class="table-dark">
+                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
+                                        <i class="fas fa-video me-1"></i> Video Info
                                     </th>
-                                    <th style="min-width:100px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='keyword', sort_dir='asc' if sort_by == 'keyword' and sort_dir == 'asc' else 'desc' if sort_by == 'keyword' else 'asc') }}" class="text-white text-decoration-none">
-                                            Keyword {% if sort_by == 'keyword' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
+                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
+                                        <i class="fas fa-dollar-sign me-1"></i> Revenue & Traffic (90d Avg)
                                     </th>
-                                    <th style="min-width:80px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='silo', sort_dir='asc' if sort_by == 'silo' and sort_dir == 'asc' else 'desc' if sort_by == 'silo' else 'asc') }}" class="text-white text-decoration-none">
-                                            Silo {% if sort_by == 'silo' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
+                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
+                                        <i class="fas fa-mouse-pointer me-1"></i> Click-Through Rates
                                     </th>
-                                    <th class="text-end" style="min-width:110px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='avg_monthly_revenue', sort_dir='asc' if sort_by == 'avg_monthly_revenue' and sort_dir == 'desc' else 'desc') }}" class="text-white text-decoration-none">
-                                            Avg Rev/mo {% if sort_by == 'avg_monthly_revenue' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
+                                    <th colspan="2" class="text-center">
+                                        <i class="fas fa-info-circle me-1"></i> Other
                                     </th>
-                                    <th class="text-end" style="min-width:110px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='avg_monthly_views', sort_dir='asc' if sort_by == 'avg_monthly_views' and sort_dir == 'desc' else 'desc') }}" class="text-white text-decoration-none">
-                                            Avg Views/mo {% if sort_by == 'avg_monthly_views' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
-                                    </th>
-                                    <th class="text-end" style="min-width:70px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='conversion_rate', sort_dir='asc' if sort_by == 'conversion_rate' and sort_dir == 'desc' else 'desc') }}" class="text-white text-decoration-none">
-                                            CR % {% if sort_by == 'conversion_rate' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
-                                    </th>
-                                    <th class="text-end" style="min-width:80px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='desc_ctr', sort_dir='asc' if sort_by == 'desc_ctr' and sort_dir == 'desc' else 'desc') }}" class="text-white text-decoration-none">
-                                            Desc CTR {% if sort_by == 'desc_ctr' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
-                                    </th>
-                                    <th class="text-end" style="min-width:80px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='pinned_ctr', sort_dir='asc' if sort_by == 'pinned_ctr' and sort_dir == 'desc' else 'desc') }}" class="text-white text-decoration-none">
-                                            Pinned CTR {% if sort_by == 'pinned_ctr' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
-                                    </th>
-                                    <th class="text-end" style="min-width:90px;">
-                                        <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by='thumbnail_ctr', sort_dir='asc' if sort_by == 'thumbnail_ctr' and sort_dir == 'desc' else 'desc') }}" class="text-white text-decoration-none">
-                                            Thumb CTR {% if sort_by == 'thumbnail_ctr' %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>{% endif %}
-                                        </a>
-                                    </th>
-                                    <th style="min-width:60px;">Rank</th>
-                                    <th style="min-width:200px;">Description</th>
+                                </tr>
+                                <!-- Column headers -->
+                                <tr class="table-secondary">
+                                    {% macro sort_link(col, label) %}
+                                    <a href="{{ url_for('dashboard.conversion_audit', page=page, channel=channel_code, keyword=keyword_search, silo=silo_filter, sort_by=col, sort_dir='asc' if sort_by == col and sort_dir == 'desc' else 'desc' if sort_by == col and sort_dir == 'asc' else 'desc') }}" class="text-dark text-decoration-none">
+                                        {{ label }} {% if sort_by == col %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }} text-primary"></i>{% else %}<i class="fas fa-sort" style="opacity:0.3;"></i>{% endif %}
+                                    </a>
+                                    {% endmacro %}
+                                    <th class="sticky-col" style="min-width:250px;">{{ sort_link('title', 'Title') }}</th>
+                                    <th style="min-width:100px;">{{ sort_link('keyword', 'Keyword') }}</th>
+                                    <th class="border-end" style="min-width:80px; border-color:#adb5bd !important;">{{ sort_link('silo', 'Silo') }}</th>
+                                    <th class="text-end" style="min-width:110px;">{{ sort_link('avg_monthly_revenue', 'Avg Rev/mo') }}</th>
+                                    <th class="text-end" style="min-width:110px;">{{ sort_link('avg_monthly_views', 'Avg Views/mo') }}</th>
+                                    <th class="text-end border-end" style="min-width:70px; border-color:#adb5bd !important;">{{ sort_link('conversion_rate', 'CR %') }}</th>
+                                    <th class="text-end" style="min-width:80px;">{{ sort_link('desc_ctr', 'Desc CTR') }}</th>
+                                    <th class="text-end" style="min-width:80px;">{{ sort_link('pinned_ctr', 'Pinned CTR') }}</th>
+                                    <th class="text-end border-end" style="min-width:90px; border-color:#adb5bd !important;">{{ sort_link('thumbnail_ctr', 'Thumb CTR') }}</th>
+                                    <th style="min-width:50px;">Rank</th>
+                                    <th style="min-width:180px;">Description</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for row in audit_data %}
-                                <tr>
+                                <tr class="audit-row" style="cursor:pointer;"
+                                    data-video-id="{{ row.video_id }}"
+                                    data-title="{{ row.title|e }}"
+                                    data-channel="{{ row.channel|e }}"
+                                    data-keyword="{{ row.keyword|e }}"
+                                    data-silo="{{ row.silo|e }}"
+                                    data-revenue="{{ row.avg_monthly_revenue }}"
+                                    data-views="{{ row.avg_monthly_views }}"
+                                    data-cr="{{ row.conversion_rate }}"
+                                    data-clicks="{{ row.total_clicks }}"
+                                    data-sales="{{ row.total_sales }}"
+                                    data-desc-ctr="{{ row.desc_ctr }}"
+                                    data-pinned-ctr="{{ row.pinned_ctr }}"
+                                    data-thumb-ctr="{{ row.thumbnail_ctr }}"
+                                    data-description="{{ row.description|e }}">
                                     <td class="sticky-col">
-                                        <a href="{{ url_for('videos.detail', video_id=row.video_id) }}" class="text-decoration-none fw-semibold" style="font-size:0.85rem;">
+                                        <span class="fw-semibold" style="font-size:0.85rem;">
                                             {{ row.title[:60] }}{% if row.title|length > 60 %}...{% endif %}
-                                        </a>
+                                        </span>
                                         <br>
                                         <small class="text-muted">{{ row.channel }}</small>
                                     </td>
                                     <td><small>{{ row.keyword or '-' }}</small></td>
-                                    <td><small>{{ row.silo or '-' }}</small></td>
+                                    <td class="border-end" style="border-color:#dee2e6 !important;"><small>{{ row.silo or '-' }}</small></td>
                                     <td class="text-end">
                                         {% if row.avg_monthly_revenue > 0 %}
                                         <span class="{% if row.avg_monthly_revenue >= 1000 %}text-success fw-bold{% elif row.avg_monthly_revenue >= 100 %}text-body{% else %}text-muted{% endif %}">
@@ -142,7 +141,7 @@
                                         {{ "{:,}".format(row.avg_monthly_views) }}
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
-                                    <td class="text-end">
+                                    <td class="text-end border-end" style="border-color:#dee2e6 !important;">
                                         {% if row.conversion_rate > 0 %}
                                         <span class="badge {% if row.conversion_rate >= 1 %}bg-success{% elif row.conversion_rate >= 0.1 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
                                             {{ "%.3f"|format(row.conversion_rate) }}%
@@ -163,7 +162,7 @@
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
-                                    <td class="text-end">
+                                    <td class="text-end border-end" style="border-color:#dee2e6 !important;">
                                         {% if row.thumbnail_ctr > 0 %}
                                         <span class="{% if row.thumbnail_ctr >= 5 %}text-success fw-bold{% elif row.thumbnail_ctr >= 2 %}text-body{% else %}text-muted{% endif %}">
                                             {{ "%.2f"|format(row.thumbnail_ctr) }}%
@@ -173,14 +172,7 @@
                                     <td class="text-center text-muted"><small>N/A</small></td>
                                     <td>
                                         {% if row.description %}
-                                        <span class="desc-preview" tabindex="0"
-                                              data-bs-toggle="popover"
-                                              data-bs-trigger="focus"
-                                              data-bs-placement="left"
-                                              data-bs-content="{{ row.description[:500]|e }}"
-                                              style="cursor:pointer; font-size:0.78rem;">
-                                            {{ row.description[:80] }}{% if row.description|length > 80 %}...{% endif %}
-                                        </span>
+                                        <small style="font-size:0.75rem;">{{ row.description[:80] }}{% if row.description|length > 80 %}...{% endif %}</small>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
                                 </tr>
@@ -224,14 +216,147 @@
     </div>
 </div>
 
+<!-- Fullscreen Detail Modal -->
+<div class="modal fade" id="auditDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white py-2">
+                <h5 class="modal-title" id="modalTitle">
+                    <i class="fas fa-chart-line me-2"></i> <span id="modalVideoTitle"></span>
+                </h5>
+                <div class="d-flex align-items-center gap-2">
+                    <a id="modalViewDetail" href="#" class="btn btn-sm btn-outline-light" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> Full Detail
+                    </a>
+                    <a id="modalYouTube" href="#" class="btn btn-sm btn-outline-danger" target="_blank">
+                        <i class="fab fa-youtube me-1"></i> YouTube
+                    </a>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <div class="modal-body p-4">
+                <div class="row g-4">
+                    <!-- Video Info -->
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100 border-primary">
+                            <div class="card-header bg-primary text-white py-2">
+                                <i class="fas fa-video me-1"></i> Video Info
+                            </div>
+                            <div class="card-body">
+                                <table class="table table-sm mb-0">
+                                    <tr><th class="text-muted" style="width:35%;">Channel</th><td id="modalChannel"></td></tr>
+                                    <tr><th class="text-muted">Keyword</th><td id="modalKeyword"></td></tr>
+                                    <tr><th class="text-muted">Silo</th><td id="modalSilo"></td></tr>
+                                    <tr><th class="text-muted">Video ID</th><td><code id="modalVideoId" style="font-size:0.8rem;"></code></td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Revenue & Traffic -->
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100 border-success">
+                            <div class="card-header bg-success text-white py-2">
+                                <i class="fas fa-dollar-sign me-1"></i> Revenue & Traffic (90d Avg)
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center mb-3">
+                                    <div class="col-6">
+                                        <div class="text-muted small">Avg Revenue/mo</div>
+                                        <div class="fs-4 fw-bold text-success" id="modalRevenue"></div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-muted small">Avg Views/mo</div>
+                                        <div class="fs-4 fw-bold" id="modalViews"></div>
+                                    </div>
+                                </div>
+                                <hr>
+                                <table class="table table-sm mb-0">
+                                    <tr><th class="text-muted" style="width:50%;">Conversion Rate</th><td class="text-end"><span id="modalCR" class="badge"></span></td></tr>
+                                    <tr><th class="text-muted">Total Clicks (90d)</th><td class="text-end" id="modalClicks"></td></tr>
+                                    <tr><th class="text-muted">Total Sales (90d)</th><td class="text-end" id="modalSales"></td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CTR Metrics -->
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100 border-info">
+                            <div class="card-header bg-info text-white py-2">
+                                <i class="fas fa-mouse-pointer me-1"></i> Click-Through Rates
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="small">Description CTR</span>
+                                        <span class="fw-bold" id="modalDescCTR"></span>
+                                    </div>
+                                    <div class="progress" style="height:8px;">
+                                        <div class="progress-bar bg-info" id="modalDescCTRBar" style="width:0%"></div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="small">Pinned Comment CTR</span>
+                                        <span class="fw-bold" id="modalPinnedCTR"></span>
+                                    </div>
+                                    <div class="progress" style="height:8px;">
+                                        <div class="progress-bar bg-warning" id="modalPinnedCTRBar" style="width:0%"></div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between mb-1">
+                                        <span class="small">Thumbnail CTR</span>
+                                        <span class="fw-bold" id="modalThumbCTR"></span>
+                                    </div>
+                                    <div class="progress" style="height:8px;">
+                                        <div class="progress-bar bg-success" id="modalThumbCTRBar" style="width:0%"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-3 p-2 bg-light rounded">
+                                    <small class="text-muted">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Rank: <strong>N/A</strong> (YouTube search rank not tracked yet)
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="col-12">
+                        <div class="card border-secondary">
+                            <div class="card-header bg-secondary text-white py-2">
+                                <i class="fas fa-file-alt me-1"></i> Description Copy
+                            </div>
+                            <div class="card-body">
+                                <pre id="modalDescription" class="mb-0" style="white-space:pre-wrap; font-family:inherit; font-size:0.85rem; max-height:400px; overflow-y:auto;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
     #auditTable thead th {
         position: sticky;
         top: 0;
         z-index: 2;
         white-space: nowrap;
-        font-size: 0.8rem;
-        padding: 0.5rem 0.4rem;
+        font-size: 0.78rem;
+        padding: 0.4rem;
+    }
+    #auditTable thead tr:first-child th {
+        top: 0;
+        z-index: 3;
+    }
+    #auditTable thead tr:nth-child(2) th {
+        top: 30px;
+        z-index: 2;
     }
     #auditTable tbody td {
         font-size: 0.82rem;
@@ -245,17 +370,68 @@
         background: inherit;
     }
     thead .sticky-col {
-        z-index: 3;
+        z-index: 4;
     }
-    tr:hover .sticky-col {
-        background: #f8f9fa;
+    .audit-row:hover {
+        background-color: #e8f4fd !important;
+    }
+    .audit-row:hover .sticky-col {
+        background: #e8f4fd;
     }
 </style>
 
 <script>
-    // Initialize description popovers
-    document.querySelectorAll('.desc-preview').forEach(function(el) {
-        new bootstrap.Popover(el, { html: false, sanitize: true });
+    // Open fullscreen modal on row click
+    const modal = new bootstrap.Modal(document.getElementById('auditDetailModal'));
+
+    document.querySelectorAll('.audit-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+            const d = this.dataset;
+
+            // Video Info
+            document.getElementById('modalVideoTitle').textContent = d.title;
+            document.getElementById('modalVideoId').textContent = d.videoId;
+            document.getElementById('modalChannel').textContent = d.channel || '-';
+            document.getElementById('modalKeyword').textContent = d.keyword || '-';
+            document.getElementById('modalSilo').textContent = d.silo || '-';
+
+            // Links
+            document.getElementById('modalViewDetail').href = '/videos/' + d.videoId;
+            document.getElementById('modalYouTube').href = 'https://www.youtube.com/watch?v=' + d.videoId;
+
+            // Revenue
+            const rev = parseFloat(d.revenue) || 0;
+            const views = parseInt(d.views) || 0;
+            const cr = parseFloat(d.cr) || 0;
+            const clicks = parseInt(d.clicks) || 0;
+            const sales = parseInt(d.sales) || 0;
+
+            document.getElementById('modalRevenue').textContent = '$' + rev.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+            document.getElementById('modalViews').textContent = views.toLocaleString();
+            document.getElementById('modalClicks').textContent = clicks.toLocaleString();
+            document.getElementById('modalSales').textContent = sales.toLocaleString();
+
+            const crBadge = document.getElementById('modalCR');
+            crBadge.textContent = cr.toFixed(3) + '%';
+            crBadge.className = 'badge ' + (cr >= 1 ? 'bg-success' : cr >= 0.1 ? 'bg-warning text-dark' : 'bg-secondary');
+
+            // CTR
+            const descCtr = parseFloat(d.descCtr) || 0;
+            const pinnedCtr = parseFloat(d.pinnedCtr) || 0;
+            const thumbCtr = parseFloat(d.thumbCtr) || 0;
+
+            document.getElementById('modalDescCTR').textContent = descCtr > 0 ? descCtr.toFixed(2) + '%' : '-';
+            document.getElementById('modalDescCTRBar').style.width = Math.min(descCtr * 5, 100) + '%';
+            document.getElementById('modalPinnedCTR').textContent = pinnedCtr > 0 ? pinnedCtr.toFixed(2) + '%' : '-';
+            document.getElementById('modalPinnedCTRBar').style.width = Math.min(pinnedCtr * 5, 100) + '%';
+            document.getElementById('modalThumbCTR').textContent = thumbCtr > 0 ? thumbCtr.toFixed(2) + '%' : '-';
+            document.getElementById('modalThumbCTRBar').style.width = Math.min(thumbCtr * 5, 100) + '%';
+
+            // Description
+            document.getElementById('modalDescription').textContent = d.description || 'No description available';
+
+            modal.show();
+        });
     });
 
     // Live filter on dropdown change
