@@ -240,8 +240,11 @@ def conversion_audit_export():
     csv_content = output.getvalue()
     output.close()
 
+    # Add UTF-8 BOM so Excel reads encoding correctly
+    csv_bytes = b'\xef\xbb\xbf' + csv_content.encode('utf-8')
+
     return Response(
-        csv_content,
-        mimetype='text/csv',
+        csv_bytes,
+        mimetype='text/csv; charset=utf-8',
         headers={'Content-Disposition': 'attachment; filename=conversion_audit.csv'}
     )
