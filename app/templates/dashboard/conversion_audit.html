@@ -99,9 +99,7 @@
                                     <th class="text-end" style="min-width:80px;">{{ sort_link('desc_ctr', 'Desc CTR') }}</th>
                                     <th class="text-end" style="min-width:80px;">{{ sort_link('pinned_ctr', 'Pinned CTR') }}</th>
                                     <th class="text-end border-end" style="min-width:90px; border-color:#adb5bd !important;">{{ sort_link('thumbnail_ctr', 'Thumb CTR') }}</th>
-                                    <th style="min-width:50px; cursor:pointer; user-select:none;" id="rankSortHeader" title="Sort by Rank">
-                                        Rank <i class="fas fa-sort" style="opacity:0.3;"></i>
-                                    </th>
+                                    <th style="min-width:50px;">Rank</th>
                                     <th style="min-width:180px;">Description</th>
                                 </tr>
                             </thead>
@@ -157,15 +155,7 @@
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
-                                    <td class="text-center" onclick="event.stopPropagation();">
-                                        <select class="form-select form-select-sm rank-select py-0 px-1" data-vid="{{ row.video_id }}" style="font-size:0.72rem; width:58px; height:24px;">
-                                            <option value="">-</option>
-                                            {% for r in range(1, 21) %}
-                                            <option value="{{ r }}">{{ r }}</option>
-                                            {% endfor %}
-                                            <option value="20+">20+</option>
-                                        </select>
-                                    </td>
+                                    <td class="text-center text-muted"><small>N/A</small></td>
                                     <td>
                                         {% if row.description %}
                                         <small style="font-size:0.75rem;">{{ row.description[:80] }}{% if row.description|length > 80 %}...{% endif %}</small>
@@ -437,45 +427,6 @@
 
             modal.show();
         });
-    });
-
-    // Rank dropdown: load from localStorage and save on change
-    document.querySelectorAll('.rank-select').forEach(function(sel) {
-        const vid = sel.dataset.vid;
-        const saved = localStorage.getItem('rank_' + vid);
-        if (saved) sel.value = saved;
-        sel.addEventListener('change', function() {
-            if (this.value) {
-                localStorage.setItem('rank_' + vid, this.value);
-            } else {
-                localStorage.removeItem('rank_' + vid);
-            }
-        });
-    });
-
-    // Client-side rank sorting (rank is in localStorage, not BigQuery)
-    let rankSortDir = 'none';
-    document.getElementById('rankSortHeader').addEventListener('click', function() {
-        rankSortDir = rankSortDir === 'asc' ? 'desc' : 'asc';
-        const icon = this.querySelector('i');
-        icon.className = rankSortDir === 'asc' ? 'fas fa-sort-up text-primary' : 'fas fa-sort-down text-primary';
-        icon.style.opacity = '1';
-
-        const tbody = document.querySelector('#auditTable tbody');
-        const rows = Array.from(tbody.querySelectorAll('tr.audit-row'));
-
-        rows.sort(function(a, b) {
-            const aVid = a.querySelector('.rank-select').dataset.vid;
-            const bVid = b.querySelector('.rank-select').dataset.vid;
-            const aRank = localStorage.getItem('rank_' + aVid);
-            const bRank = localStorage.getItem('rank_' + bVid);
-            // Parse rank: empty/null = 999 (sort to end), "20+" = 21
-            const aVal = !aRank ? 999 : (aRank === '20+' ? 21 : parseInt(aRank));
-            const bVal = !bRank ? 999 : (bRank === '20+' ? 21 : parseInt(bRank));
-            return rankSortDir === 'asc' ? aVal - bVal : bVal - aVal;
-        });
-
-        rows.forEach(function(row) { tbody.appendChild(row); });
     });
 
     // Live filter on dropdown change
