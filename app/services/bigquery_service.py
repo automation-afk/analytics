@@ -974,7 +974,8 @@ class BigQueryService:
             'conversion_rate': 'tr.conversion_rate',
             'desc_ctr': 'lc.desc_ctr',
             'pinned_ctr': 'lc.pinned_ctr',
-            'thumbnail_ctr': 'yc.avg_thumbnail_ctr'
+            'thumbnail_ctr': 'yc.avg_thumbnail_ctr',
+            'rank': 'rk.latest_rank'
         }
         sort_column = allowed_sorts.get(sort_by, 'tr.avg_monthly_revenue')
         sort_direction = 'ASC' if sort_dir.lower() == 'asc' else 'DESC'
@@ -1046,6 +1047,19 @@ class BigQueryService:
                 ) * 100, 2) as pinned_ctr
             FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
             GROUP BY video_id
+        ),
+        latest_rank_date AS (
+            SELECT video_id, MAX(rank_date) as max_rank_date
+            FROM `company-wide-370010.Digibot.Rank_domination_score`
+            GROUP BY video_id
+        ),
+        rank_data AS (
+            SELECT r.video_id, MIN(r.rank) as latest_rank
+            FROM `company-wide-370010.Digibot.Rank_domination_score` r
+            INNER JOIN latest_rank_date ld ON r.video_id = ld.video_id AND r.rank_date = ld.max_rank_date
+            INNER JOIN `company-wide-370010.Digibot.Digibot_General_info` g ON r.video_id = g.video_id
+            WHERE LOWER(r.keyword) = LOWER(g.main_keyword)
+            GROUP BY r.video_id
         )
         SELECT
             vi.video_id,
@@ -1061,11 +1075,13 @@ class BigQueryService:
             tr.total_sales,
             yc.avg_thumbnail_ctr as thumbnail_ctr,
             lc.desc_ctr,
-            lc.pinned_ctr
+            lc.pinned_ctr,
+            rk.latest_rank as rank
         FROM video_info vi
         LEFT JOIN trailing_revenue tr ON vi.video_id = tr.video_id
         LEFT JOIN yt_ctr yc ON vi.video_id = yc.Video_ID
         LEFT JOIN link_ctr lc ON vi.video_id = lc.video_id
+        LEFT JOIN rank_data rk ON vi.video_id = rk.video_id
         ORDER BY {sort_column} {sort_direction} NULLS LAST
         LIMIT @limit OFFSET @offset
         """
@@ -1097,6 +1113,7 @@ class BigQueryService:
                     'thumbnail_ctr': float(row.thumbnail_ctr) if row.thumbnail_ctr else 0.0,
                     'desc_ctr': float(row.desc_ctr) if row.desc_ctr else 0.0,
                     'pinned_ctr': float(row.pinned_ctr) if row.pinned_ctr else 0.0,
+                    'rank': int(row.rank) if row.rank else None,
                 })
 
             logger.info(f"Fetched {len(audit_data)} videos for conversion audit")

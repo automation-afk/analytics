@@ -219,7 +219,7 @@ def conversion_audit_export():
         'Video ID', 'Title', 'Channel', 'Keyword', 'Silo',
         'Avg Monthly Revenue (90d)', 'Avg Monthly Views (90d)',
         'Conversion Rate %', 'Desc CTR %', 'Pinned CTR %',
-        'Thumbnail CTR %', 'Description'
+        'Thumbnail CTR %', 'Rank', 'Description'
     ])
     for row in audit_data:
         writer.writerow([
@@ -234,6 +234,7 @@ def conversion_audit_export():
             row['desc_ctr'],
             row['pinned_ctr'],
             row['thumbnail_ctr'],
+            row.get('rank') or '',
             row['description'][:500].replace('\n', ' ').replace('\r', '') if row['description'] else ''
         ])
 
