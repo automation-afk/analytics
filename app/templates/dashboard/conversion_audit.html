@@ -366,9 +366,10 @@
     }
 </style>
 
+<script type="application/json" id="auditRowData">{{ audit_data|tojson }}</script>
 <script>
     // Store row data as JSON to avoid data-attribute quote/encoding issues
-    const auditRows = {{ audit_data|tojson }};
+    const auditRows = JSON.parse(document.getElementById('auditRowData').textContent);
 
     // Open fullscreen modal on row click
     const modal = new bootstrap.Modal(document.getElementById('auditDetailModal'));
