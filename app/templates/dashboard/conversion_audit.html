@@ -458,6 +458,11 @@
                                         <span id="modalPreferredBrandStatus"></span>
                                     </div>
                                     <div class="p-2 bg-light rounded" style="font-size:0.82rem;" id="modalCTAReasoning">-</div>
+                                    <div class="text-end mt-2">
+                                        <button id="modalRescoreBtn" class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem;">
+                                            <i class="fas fa-redo me-1"></i> Re-score
+                                        </button>
+                                    </div>
                                 </div>
                                 <!-- Score button (shown when not scored) -->
                                 <div id="modalCTAUnscored" class="text-center py-4">
@@ -774,14 +779,13 @@
 
     // ==================== CTA SCORING (from modal) ====================
 
-    document.getElementById('modalScoreBtn').addEventListener('click', function() {
-        const idx = parseInt(this.dataset.idx);
+    function triggerCTAScore(btn, originalHTML) {
+        const idx = parseInt(document.getElementById('modalScoreBtn').dataset.idx);
         const d = auditRows[idx];
         if (!d) return;
 
-        this.disabled = true;
-        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Scoring...';
-        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Scoring...';
 
         fetch('/api/v1/cta-score', {
             method: 'POST',
@@ -804,15 +808,23 @@
                 location.reload();
             } else {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-robot me-1"></i> Score with Claude AI';
+                btn.innerHTML = originalHTML;
                 alert('Scoring failed: ' + (data.error || 'Unknown error'));
             }
         })
         .catch(err => {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-robot me-1"></i> Score with Claude AI';
+            btn.innerHTML = originalHTML;
             alert('Error: ' + err.message);
         });
+    }
+
+    document.getElementById('modalScoreBtn').addEventListener('click', function() {
+        triggerCTAScore(this, '<i class="fas fa-robot me-1"></i> Score with Claude AI');
+    });
+
+    document.getElementById('modalRescoreBtn').addEventListener('click', function() {
+        triggerCTAScore(this, '<i class="fas fa-redo me-1"></i> Re-score');
     });
 
 </script>
