@@ -940,6 +940,210 @@ class BigQueryService:
             avg_revenue_per_video=0.0
         )
 
+    def get_conversion_audit_data(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        channel_code: Optional[str] = None,
+        keyword_search: Optional[str] = None,
+        silo: Optional[str] = None,
+        sort_by: str = 'avg_monthly_revenue',
+        sort_dir: str = 'desc'
+    ) -> List[Dict]:
+        """
+        Fetch conversion audit data for all videos in a single efficient query.
+
+        Joins across multiple BigQuery tables to build the audit table:
+        - Video metadata (title, channel, description)
+        - Keyword & silo from General_info
+        - Trailing 90-day avg revenue, views, conversion rate from Metrics_by_Month
+        - Thumbnail CTR from YT Analytics (last 90 days)
+        - Desc CTR and Pinned CTR from Revenue_Metrics by Link_Placement
+
+        Returns:
+            List of dictionaries with audit data per video
+        """
+        # Validate sort column to prevent SQL injection
+        allowed_sorts = {
+            'title': 'vi.Video_Title',
+            'channel': 'vi.Channel_Code',
+            'keyword': 'vi.main_keyword',
+            'silo': 'vi.silo',
+            'avg_monthly_revenue': 'tr.avg_monthly_revenue',
+            'avg_monthly_views': 'tr.avg_monthly_views',
+            'conversion_rate': 'tr.conversion_rate',
+            'desc_ctr': 'lc.desc_ctr',
+            'pinned_ctr': 'lc.pinned_ctr',
+            'thumbnail_ctr': 'yc.avg_thumbnail_ctr'
+        }
+        sort_column = allowed_sorts.get(sort_by, 'tr.avg_monthly_revenue')
+        sort_direction = 'ASC' if sort_dir.lower() == 'asc' else 'DESC'
+
+        # Build WHERE clause
+        where_clauses = ["1=1"]
+        params = []
+
+        if channel_code:
+            where_clauses.append("UPPER(v.Channel_Code) LIKE @channel_code")
+            params.append(bigquery.ScalarQueryParameter("channel_code", "STRING", f"%{channel_code.upper()}%"))
+
+        if keyword_search:
+            where_clauses.append("(UPPER(COALESCE(g.main_keyword, '')) LIKE @keyword_search OR UPPER(v.Video_Title) LIKE @keyword_search)")
+            params.append(bigquery.ScalarQueryParameter("keyword_search", "STRING", f"%{keyword_search.upper()}%"))
+
+        if silo:
+            where_clauses.append("UPPER(COALESCE(g.silo, '')) LIKE @silo_filter")
+            params.append(bigquery.ScalarQueryParameter("silo_filter", "STRING", f"%{silo.upper()}%"))
+
+        where_sql = " AND ".join(where_clauses)
+
+        query = f"""
+        WITH video_info AS (
+            SELECT
+                v.video_id,
+                v.Video_Title,
+                v.Channel_Code,
+                v.Video_description,
+                g.main_keyword,
+                g.silo
+            FROM `company-wide-370010.1_Youtube_Metrics_Dump.YT_Video_Registration_V2` v
+            LEFT JOIN `company-wide-370010.Digibot.Digibot_General_info` g
+                ON v.video_id = g.video_id
+            WHERE {where_sql}
+        ),
+        trailing_revenue AS (
+            SELECT
+                video_id,
+                ROUND(AVG(revenue), 2) as avg_monthly_revenue,
+                ROUND(AVG(organic_views), 0) as avg_monthly_views,
+                ROUND(SAFE_DIVIDE(SUM(sales), NULLIF(SUM(organic_views), 0)) * 100, 3) as conversion_rate,
+                SUM(clicks) as total_clicks,
+                SUM(sales) as total_sales
+            FROM `company-wide-370010.Digibot.Metrics_by_Month`
+            WHERE metrics_month_year >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+            GROUP BY video_id
+        ),
+        yt_ctr AS (
+            SELECT
+                Video_ID,
+                ROUND(AVG(impression_CTR), 2) as avg_thumbnail_ctr
+            FROM `company-wide-370010.Digibot.Digibot_YT_analytics`
+            WHERE Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+            GROUP BY Video_ID
+        ),
+        link_ctr AS (
+            SELECT
+                video_id,
+                ROUND(SAFE_DIVIDE(
+                    SUM(IF(LOWER(Link_Placement) LIKE '%desc%', clicks, 0)),
+                    NULLIF(SUM(IF(LOWER(Link_Placement) LIKE '%desc%', clicks, 0)) +
+                           SUM(IF(LOWER(Link_Placement) LIKE '%desc%', sales, 0)), 0)
+                ) * 100, 2) as desc_ctr,
+                ROUND(SAFE_DIVIDE(
+                    SUM(IF(LOWER(Link_Placement) LIKE '%pin%', clicks, 0)),
+                    NULLIF(SUM(IF(LOWER(Link_Placement) LIKE '%pin%', clicks, 0)) +
+                           SUM(IF(LOWER(Link_Placement) LIKE '%pin%', sales, 0)), 0)
+                ) * 100, 2) as pinned_ctr
+            FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+            GROUP BY video_id
+        )
+        SELECT
+            vi.video_id,
+            vi.Video_Title as title,
+            vi.Channel_Code as channel,
+            vi.Video_description as description,
+            vi.main_keyword as keyword,
+            vi.silo,
+            tr.avg_monthly_revenue,
+            tr.avg_monthly_views,
+            tr.conversion_rate,
+            tr.total_clicks,
+            tr.total_sales,
+            yc.avg_thumbnail_ctr as thumbnail_ctr,
+            lc.desc_ctr,
+            lc.pinned_ctr
+        FROM video_info vi
+        LEFT JOIN trailing_revenue tr ON vi.video_id = tr.video_id
+        LEFT JOIN yt_ctr yc ON vi.video_id = yc.Video_ID
+        LEFT JOIN link_ctr lc ON vi.video_id = lc.video_id
+        ORDER BY {sort_column} {sort_direction} NULLS LAST
+        LIMIT @limit OFFSET @offset
+        """
+
+        params.extend([
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset)
+        ])
+
+        try:
+            job_config = bigquery.QueryJobConfig(query_parameters=params)
+            query_job = self.client.query(query, job_config=job_config)
+            results = query_job.result()
+
+            audit_data = []
+            for row in results:
+                audit_data.append({
+                    'video_id': row.video_id,
+                    'title': row.title or '',
+                    'channel': row.channel or '',
+                    'description': row.description or '',
+                    'keyword': row.keyword or '',
+                    'silo': row.silo or '',
+                    'avg_monthly_revenue': float(row.avg_monthly_revenue) if row.avg_monthly_revenue else 0.0,
+                    'avg_monthly_views': int(row.avg_monthly_views) if row.avg_monthly_views else 0,
+                    'conversion_rate': float(row.conversion_rate) if row.conversion_rate else 0.0,
+                    'total_clicks': int(row.total_clicks) if row.total_clicks else 0,
+                    'total_sales': int(row.total_sales) if row.total_sales else 0,
+                    'thumbnail_ctr': float(row.thumbnail_ctr) if row.thumbnail_ctr else 0.0,
+                    'desc_ctr': float(row.desc_ctr) if row.desc_ctr else 0.0,
+                    'pinned_ctr': float(row.pinned_ctr) if row.pinned_ctr else 0.0,
+                })
+
+            logger.info(f"Fetched {len(audit_data)} videos for conversion audit")
+            return audit_data
+
+        except Exception as e:
+            logger.error(f"Error fetching conversion audit data: {str(e)}")
+            return []
+
+    def get_conversion_audit_export(
+        self,
+        channel_code: Optional[str] = None,
+        keyword_search: Optional[str] = None,
+        silo: Optional[str] = None,
+        sort_by: str = 'avg_monthly_revenue',
+        sort_dir: str = 'desc'
+    ) -> List[Dict]:
+        """Fetch ALL conversion audit data (no pagination) for CSV export."""
+        return self.get_conversion_audit_data(
+            limit=10000,
+            offset=0,
+            channel_code=channel_code,
+            keyword_search=keyword_search,
+            silo=silo,
+            sort_by=sort_by,
+            sort_dir=sort_dir
+        )
+
+    def get_all_silos(self) -> List[str]:
+        """Get all distinct silo values from BigQuery."""
+        try:
+            query = """
+            SELECT DISTINCT silo
+            FROM `company-wide-370010.Digibot.Digibot_General_info`
+            WHERE silo IS NOT NULL AND TRIM(silo) != ''
+            ORDER BY silo
+            """
+            query_job = self.client.query(query)
+            results = query_job.result()
+            silos = [row.silo for row in results]
+            logger.info(f"Fetched {len(silos)} distinct silos from BigQuery")
+            return silos
+
+        except Exception as e:
+            logger.error(f"Error getting silos: {str(e)}")
+            return []
+
     def get_all_channels(self) -> List[str]:
         """
         Get all distinct channel codes from BigQuery.
