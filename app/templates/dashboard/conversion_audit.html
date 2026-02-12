@@ -79,7 +79,7 @@
                                     <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
                                         <i class="fas fa-mouse-pointer me-1"></i> Click-Through Rates
                                     </th>
-                                    <th colspan="2" class="text-center">
+                                    <th colspan="4" class="text-center">
                                         <i class="fas fa-info-circle me-1"></i> Other
                                     </th>
                                 </tr>
@@ -90,17 +90,19 @@
                                         {{ label }} {% if sort_by == col %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }} text-primary"></i>{% else %}<i class="fas fa-sort" style="opacity:0.3;"></i>{% endif %}
                                     </a>
                                     {% endmacro %}
-                                    <th class="sticky-col" style="min-width:250px;">{{ sort_link('title', 'Title') }}</th>
-                                    <th style="min-width:100px;">{{ sort_link('keyword', 'Keyword') }}</th>
-                                    <th class="border-end" style="min-width:80px; border-color:#adb5bd !important;">{{ sort_link('silo', 'Silo') }}</th>
-                                    <th class="text-end" style="min-width:110px;">{{ sort_link('avg_monthly_revenue', 'Avg Rev/mo') }}</th>
-                                    <th class="text-end" style="min-width:110px;">{{ sort_link('avg_monthly_views', 'Avg Views/mo') }}</th>
-                                    <th class="text-end border-end" style="min-width:70px; border-color:#adb5bd !important;">{{ sort_link('conversion_rate', 'CR %') }}</th>
-                                    <th class="text-end" style="min-width:80px;">{{ sort_link('desc_ctr', 'Desc CTR') }}</th>
-                                    <th class="text-end" style="min-width:80px;">{{ sort_link('pinned_ctr', 'Pinned CTR') }}</th>
-                                    <th class="text-end border-end" style="min-width:90px; border-color:#adb5bd !important;">{{ sort_link('thumbnail_ctr', 'Thumb CTR') }}</th>
-                                    <th style="min-width:50px;">{{ sort_link('rank', 'Rank') }}</th>
-                                    <th style="min-width:180px;">Description</th>
+                                    <th class="sticky-col" style="min-width:250px;" title="Video title and channel code">{{ sort_link('title', 'Title') }}</th>
+                                    <th style="min-width:100px;" title="Main target keyword from Digibot_General_info">{{ sort_link('keyword', 'Keyword') }}</th>
+                                    <th class="border-end" style="min-width:80px; border-color:#adb5bd !important;" title="Content silo/category from Digibot_General_info">{{ sort_link('silo', 'Silo') }}</th>
+                                    <th class="text-end" style="min-width:110px;" title="Average monthly revenue over the last 90 days. Calculation: AVG(revenue) from Metrics_by_Month where date >= 90 days ago">{{ sort_link('avg_monthly_revenue', 'Avg Rev/mo') }}</th>
+                                    <th class="text-end" style="min-width:110px;" title="Average monthly organic views over the last 90 days. Calculation: AVG(organic_views) from Metrics_by_Month where date >= 90 days ago">{{ sort_link('avg_monthly_views', 'Avg Views/mo') }}</th>
+                                    <th class="text-end border-end" style="min-width:70px; border-color:#adb5bd !important;" title="Conversion Rate. Calculation: (total sales / total organic views) x 100 over last 90 days from Metrics_by_Month">{{ sort_link('conversion_rate', 'CR %') }}</th>
+                                    <th class="text-end" style="min-width:80px;" title="Description Click-Through Rate. Calculation: (description link clicks / total organic views over 90d) x 100. Clicks from Revenue_Metrics where Link_Placement contains 'desc'">{{ sort_link('desc_ctr', 'Desc CTR') }}</th>
+                                    <th class="text-end" style="min-width:80px;" title="Pinned Comment Click-Through Rate. Calculation: (pinned comment clicks / total organic views over 90d) x 100. Clicks from Revenue_Metrics where Link_Placement contains 'pin' or 'comment'">{{ sort_link('pinned_ctr', 'Pinned CTR') }}</th>
+                                    <th class="text-end border-end" style="min-width:90px; border-color:#adb5bd !important;" title="YouTube Thumbnail/Impression CTR. Calculation: AVG(impression_CTR) from Digibot_YT_analytics over last 90 days. This is the % of impressions that led to a video view">{{ sort_link('thumbnail_ctr', 'Thumb CTR') }}</th>
+                                    <th style="min-width:50px;" title="YouTube search rank for the video's main keyword. From Rank_domination_score table (latest rank_date). Green=1-3, Yellow=4-10, Grey=11+">{{ sort_link('rank', 'Rank') }}</th>
+                                    <th style="min-width:100px;" title="Top affiliate brand in description links by revenue. From Revenue_Metrics where Link_Placement contains 'desc', ranked by total revenue">Desc Brand</th>
+                                    <th style="min-width:100px;" title="Top affiliate brand in pinned comment links by revenue. From Revenue_Metrics where Link_Placement contains 'pin' or 'comment', ranked by total revenue">Comment Brand</th>
+                                    <th style="min-width:180px;" title="First 80 characters of the video description from YT_Video_Registration_V2">Description</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -162,6 +164,8 @@
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
+                                    <td><small>{{ row.desc_brand or '-' }}</small></td>
+                                    <td><small>{{ row.comment_brand or '-' }}</small></td>
                                     <td>
                                         {% if row.description %}
                                         <small style="font-size:0.75rem;">{{ row.description[:80] }}{% if row.description|length > 80 %}...{% endif %}</small>
@@ -240,6 +244,8 @@
                                     <tr><th class="text-muted">Keyword</th><td id="modalKeyword"></td></tr>
                                     <tr><th class="text-muted">Silo</th><td id="modalSilo"></td></tr>
                                     <tr><th class="text-muted">Video ID</th><td><code id="modalVideoId" style="font-size:0.8rem;"></code></td></tr>
+                                    <tr><th class="text-muted">Desc Brand</th><td id="modalDescBrand"></td></tr>
+                                    <tr><th class="text-muted">Comment Brand</th><td id="modalCommentBrand"></td></tr>
                                 </table>
                             </div>
                         </div>
@@ -395,6 +401,8 @@
             document.getElementById('modalChannel').textContent = d.channel || '-';
             document.getElementById('modalKeyword').textContent = d.keyword || '-';
             document.getElementById('modalSilo').textContent = d.silo || '-';
+            document.getElementById('modalDescBrand').textContent = d.desc_brand || '-';
+            document.getElementById('modalCommentBrand').textContent = d.comment_brand || '-';
 
             // Links
             document.getElementById('modalViewDetail').href = '/videos/' + d.video_id;

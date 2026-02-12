@@ -972,8 +972,8 @@ class BigQueryService:
             'avg_monthly_revenue': 'tr.avg_monthly_revenue',
             'avg_monthly_views': 'tr.avg_monthly_views',
             'conversion_rate': 'tr.conversion_rate',
-            'desc_ctr': 'lc.desc_ctr',
-            'pinned_ctr': 'lc.pinned_ctr',
+            'desc_ctr': 'desc_ctr',
+            'pinned_ctr': 'pinned_ctr',
             'thumbnail_ctr': 'yc.avg_thumbnail_ctr',
             'rank': 'rk.latest_rank'
         }
@@ -1017,6 +1017,7 @@ class BigQueryService:
                 video_id,
                 ROUND(AVG(revenue), 2) as avg_monthly_revenue,
                 ROUND(AVG(organic_views), 0) as avg_monthly_views,
+                SUM(organic_views) as total_views_90d,
                 ROUND(SAFE_DIVIDE(SUM(sales), NULLIF(SUM(organic_views), 0)) * 100, 3) as conversion_rate,
                 SUM(clicks) as total_clicks,
                 SUM(sales) as total_sales
@@ -1032,19 +1033,11 @@ class BigQueryService:
             WHERE Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
             GROUP BY Video_ID
         ),
-        link_ctr AS (
+        link_clicks AS (
             SELECT
                 video_id,
-                ROUND(SAFE_DIVIDE(
-                    SUM(IF(LOWER(Link_Placement) LIKE '%desc%', clicks, 0)),
-                    NULLIF(SUM(IF(LOWER(Link_Placement) LIKE '%desc%', clicks, 0)) +
-                           SUM(IF(LOWER(Link_Placement) LIKE '%desc%', sales, 0)), 0)
-                ) * 100, 2) as desc_ctr,
-                ROUND(SAFE_DIVIDE(
-                    SUM(IF(LOWER(Link_Placement) LIKE '%pin%', clicks, 0)),
-                    NULLIF(SUM(IF(LOWER(Link_Placement) LIKE '%pin%', clicks, 0)) +
-                           SUM(IF(LOWER(Link_Placement) LIKE '%pin%', sales, 0)), 0)
-                ) * 100, 2) as pinned_ctr
+                SUM(IF(LOWER(Link_Placement) LIKE '%desc%', clicks, 0)) as desc_clicks,
+                SUM(IF(LOWER(Link_Placement) LIKE '%pin%' OR LOWER(Link_Placement) LIKE '%comment%', clicks, 0)) as pinned_clicks
             FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
             GROUP BY video_id
         ),
@@ -1060,6 +1053,28 @@ class BigQueryService:
             INNER JOIN `company-wide-370010.Digibot.Digibot_General_info` g ON r.video_id = g.video_id
             WHERE LOWER(r.keyword) = LOWER(g.main_keyword)
             GROUP BY r.video_id
+        ),
+        desc_brand AS (
+            SELECT video_id, Affiliate as desc_affiliate
+            FROM (
+                SELECT video_id, Affiliate,
+                    ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY SUM(revenue) DESC) as rn
+                FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+                WHERE LOWER(Link_Placement) LIKE '%desc%'
+                GROUP BY video_id, Affiliate
+            )
+            WHERE rn = 1
+        ),
+        comment_brand AS (
+            SELECT video_id, Affiliate as comment_affiliate
+            FROM (
+                SELECT video_id, Affiliate,
+                    ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY SUM(revenue) DESC) as rn
+                FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+                WHERE LOWER(Link_Placement) LIKE '%pin%' OR LOWER(Link_Placement) LIKE '%comment%'
+                GROUP BY video_id, Affiliate
+            )
+            WHERE rn = 1
         )
         SELECT
             vi.video_id,
@@ -1074,14 +1089,20 @@ class BigQueryService:
             tr.total_clicks,
             tr.total_sales,
             yc.avg_thumbnail_ctr as thumbnail_ctr,
-            lc.desc_ctr,
-            lc.pinned_ctr,
-            rk.latest_rank as rank
+            ROUND(SAFE_DIVIDE(lk.desc_clicks, NULLIF(tr.total_views_90d, 0)) * 100, 2) as desc_ctr,
+            ROUND(SAFE_DIVIDE(lk.pinned_clicks, NULLIF(tr.total_views_90d, 0)) * 100, 2) as pinned_ctr,
+            lk.desc_clicks,
+            lk.pinned_clicks,
+            rk.latest_rank as rank,
+            db.desc_affiliate,
+            cb.comment_affiliate
         FROM video_info vi
         LEFT JOIN trailing_revenue tr ON vi.video_id = tr.video_id
         LEFT JOIN yt_ctr yc ON vi.video_id = yc.Video_ID
-        LEFT JOIN link_ctr lc ON vi.video_id = lc.video_id
+        LEFT JOIN link_clicks lk ON vi.video_id = lk.video_id
         LEFT JOIN rank_data rk ON vi.video_id = rk.video_id
+        LEFT JOIN desc_brand db ON vi.video_id = db.video_id
+        LEFT JOIN comment_brand cb ON vi.video_id = cb.video_id
         ORDER BY {sort_column} {sort_direction} NULLS LAST
         LIMIT @limit OFFSET @offset
         """
@@ -1113,7 +1134,11 @@ class BigQueryService:
                     'thumbnail_ctr': float(row.thumbnail_ctr) if row.thumbnail_ctr else 0.0,
                     'desc_ctr': float(row.desc_ctr) if row.desc_ctr else 0.0,
                     'pinned_ctr': float(row.pinned_ctr) if row.pinned_ctr else 0.0,
+                    'desc_clicks': int(row.desc_clicks) if row.desc_clicks else 0,
+                    'pinned_clicks': int(row.pinned_clicks) if row.pinned_clicks else 0,
                     'rank': int(row.rank) if row.rank else None,
+                    'desc_brand': row.desc_affiliate or '',
+                    'comment_brand': row.comment_affiliate or '',
                 })
 
             logger.info(f"Fetched {len(audit_data)} videos for conversion audit")
@@ -1141,6 +1166,22 @@ class BigQueryService:
             sort_by=sort_by,
             sort_dir=sort_dir
         )
+
+    def get_distinct_link_placements(self) -> List[Dict]:
+        """Debug: get distinct Link_Placement values and counts from Revenue_Metrics."""
+        try:
+            query = """
+            SELECT Link_Placement, COUNT(*) as cnt, COUNT(DISTINCT video_id) as video_cnt
+            FROM `company-wide-370010.Digibot.Revenue_Metrics by date and tracking id`
+            GROUP BY Link_Placement
+            ORDER BY cnt DESC
+            """
+            query_job = self.client.query(query)
+            results = query_job.result()
+            return [{'placement': row.Link_Placement, 'rows': row.cnt, 'videos': row.video_cnt} for row in results]
+        except Exception as e:
+            logger.error(f"Error fetching link placements: {str(e)}")
+            return []
 
     def get_all_silos(self) -> List[str]:
         """Get all distinct silo values from BigQuery."""

@@ -1,7 +1,7 @@
 """Dashboard blueprint - main overview and video list pages."""
 import csv
 import io
-from flask import Blueprint, render_template, request, current_app, redirect, url_for, session, Response
+from flask import Blueprint, render_template, request, current_app, redirect, url_for, session, Response, jsonify
 from app.extensions import cache
 from app.blueprints.auth import login_required
 
@@ -219,7 +219,7 @@ def conversion_audit_export():
         'Video ID', 'Title', 'Channel', 'Keyword', 'Silo',
         'Avg Monthly Revenue (90d)', 'Avg Monthly Views (90d)',
         'Conversion Rate %', 'Desc CTR %', 'Pinned CTR %',
-        'Thumbnail CTR %', 'Rank', 'Description'
+        'Thumbnail CTR %', 'Rank', 'Desc Brand', 'Comment Brand', 'Description'
     ])
     for row in audit_data:
         writer.writerow([
@@ -235,6 +235,8 @@ def conversion_audit_export():
             row['pinned_ctr'],
             row['thumbnail_ctr'],
             row.get('rank') or '',
+            row.get('desc_brand') or '',
+            row.get('comment_brand') or '',
             row['description'][:500].replace('\n', ' ').replace('\r', '') if row['description'] else ''
         ])
 
@@ -249,3 +251,11 @@ def conversion_audit_export():
         mimetype='text/csv; charset=utf-8',
         headers={'Content-Disposition': 'attachment; filename=conversion_audit.csv'}
     )
+
+
+@bp.route('/dashboard/debug/link-placements')
+@login_required
+def debug_link_placements():
+    """Debug: show distinct Link_Placement values from Revenue_Metrics."""
+    data = current_app.bigquery.get_distinct_link_placements()
+    return jsonify(data)
