@@ -155,7 +155,15 @@
                                         </span>
                                         {% else %}<span class="text-muted">-</span>{% endif %}
                                     </td>
-                                    <td class="text-center text-muted"><small>N/A</small></td>
+                                    <td class="text-center" onclick="event.stopPropagation();">
+                                        <select class="form-select form-select-sm rank-select py-0 px-1" data-vid="{{ row.video_id }}" style="font-size:0.72rem; width:58px; height:24px;">
+                                            <option value="">-</option>
+                                            {% for r in range(1, 21) %}
+                                            <option value="{{ r }}">{{ r }}</option>
+                                            {% endfor %}
+                                            <option value="20+">20+</option>
+                                        </select>
+                                    </td>
                                     <td>
                                         {% if row.description %}
                                         <small style="font-size:0.75rem;">{{ row.description[:80] }}{% if row.description|length > 80 %}...{% endif %}</small>
@@ -367,6 +375,9 @@
 </style>
 
 <script type="application/json" id="auditRowData">{{ audit_data|tojson }}</script>
+{% endblock %}
+
+{% block extra_js %}
 <script>
     // Store row data as JSON to avoid data-attribute quote/encoding issues
     const auditRows = JSON.parse(document.getElementById('auditRowData').textContent);
@@ -423,6 +434,20 @@
             document.getElementById('modalDescription').textContent = d.description || 'No description available';
 
             modal.show();
+        });
+    });
+
+    // Rank dropdown: load from localStorage and save on change
+    document.querySelectorAll('.rank-select').forEach(function(sel) {
+        const vid = sel.dataset.vid;
+        const saved = localStorage.getItem('rank_' + vid);
+        if (saved) sel.value = saved;
+        sel.addEventListener('change', function() {
+            if (this.value) {
+                localStorage.setItem('rank_' + vid, this.value);
+            } else {
+                localStorage.removeItem('rank_' + vid);
+            }
         });
     });
 
