@@ -105,21 +105,7 @@
                             </thead>
                             <tbody>
                                 {% for row in audit_data %}
-                                <tr class="audit-row" style="cursor:pointer;"
-                                    data-video-id="{{ row.video_id }}"
-                                    data-title="{{ row.title|e }}"
-                                    data-channel="{{ row.channel|e }}"
-                                    data-keyword="{{ row.keyword|e }}"
-                                    data-silo="{{ row.silo|e }}"
-                                    data-revenue="{{ row.avg_monthly_revenue }}"
-                                    data-views="{{ row.avg_monthly_views }}"
-                                    data-cr="{{ row.conversion_rate }}"
-                                    data-clicks="{{ row.total_clicks }}"
-                                    data-sales="{{ row.total_sales }}"
-                                    data-desc-ctr="{{ row.desc_ctr }}"
-                                    data-pinned-ctr="{{ row.pinned_ctr }}"
-                                    data-thumb-ctr="{{ row.thumbnail_ctr }}"
-                                    data-description="{{ row.description|e }}">
+                                <tr class="audit-row" style="cursor:pointer;" data-idx="{{ loop.index0 }}">
                                     <td class="sticky-col">
                                         <span class="fw-semibold" style="font-size:0.85rem;">
                                             {{ row.title[:60] }}{% if row.title|length > 60 %}...{% endif %}
@@ -381,30 +367,35 @@
 </style>
 
 <script>
+    // Store row data as JSON to avoid data-attribute quote/encoding issues
+    const auditRows = {{ audit_data|tojson }};
+
     // Open fullscreen modal on row click
     const modal = new bootstrap.Modal(document.getElementById('auditDetailModal'));
 
     document.querySelectorAll('.audit-row').forEach(function(row) {
         row.addEventListener('click', function() {
-            const d = this.dataset;
+            const idx = parseInt(this.dataset.idx);
+            const d = auditRows[idx];
+            if (!d) return;
 
             // Video Info
-            document.getElementById('modalVideoTitle').textContent = d.title;
-            document.getElementById('modalVideoId').textContent = d.videoId;
+            document.getElementById('modalVideoTitle').textContent = d.title || '';
+            document.getElementById('modalVideoId').textContent = d.video_id || '';
             document.getElementById('modalChannel').textContent = d.channel || '-';
             document.getElementById('modalKeyword').textContent = d.keyword || '-';
             document.getElementById('modalSilo').textContent = d.silo || '-';
 
             // Links
-            document.getElementById('modalViewDetail').href = '/videos/' + d.videoId;
-            document.getElementById('modalYouTube').href = 'https://www.youtube.com/watch?v=' + d.videoId;
+            document.getElementById('modalViewDetail').href = '/videos/' + d.video_id;
+            document.getElementById('modalYouTube').href = 'https://www.youtube.com/watch?v=' + d.video_id;
 
             // Revenue
-            const rev = parseFloat(d.revenue) || 0;
-            const views = parseInt(d.views) || 0;
-            const cr = parseFloat(d.cr) || 0;
-            const clicks = parseInt(d.clicks) || 0;
-            const sales = parseInt(d.sales) || 0;
+            const rev = parseFloat(d.avg_monthly_revenue) || 0;
+            const views = parseInt(d.avg_monthly_views) || 0;
+            const cr = parseFloat(d.conversion_rate) || 0;
+            const clicks = parseInt(d.total_clicks) || 0;
+            const sales = parseInt(d.total_sales) || 0;
 
             document.getElementById('modalRevenue').textContent = '$' + rev.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
             document.getElementById('modalViews').textContent = views.toLocaleString();
@@ -416,9 +407,9 @@
             crBadge.className = 'badge ' + (cr >= 1 ? 'bg-success' : cr >= 0.1 ? 'bg-warning text-dark' : 'bg-secondary');
 
             // CTR
-            const descCtr = parseFloat(d.descCtr) || 0;
-            const pinnedCtr = parseFloat(d.pinnedCtr) || 0;
-            const thumbCtr = parseFloat(d.thumbCtr) || 0;
+            const descCtr = parseFloat(d.desc_ctr) || 0;
+            const pinnedCtr = parseFloat(d.pinned_ctr) || 0;
+            const thumbCtr = parseFloat(d.thumbnail_ctr) || 0;
 
             document.getElementById('modalDescCTR').textContent = descCtr > 0 ? descCtr.toFixed(2) + '%' : '-';
             document.getElementById('modalDescCTRBar').style.width = Math.min(descCtr * 5, 100) + '%';
