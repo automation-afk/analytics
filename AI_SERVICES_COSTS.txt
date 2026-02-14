@@ -265,13 +265,3 @@
   ================================================================================
 
 
-
-analyze_existing_links()	
-  Detects affiliate links in description	
-compare_recommendations_to_existing()	  
-  Cross-checks recs vs what's actually in description
-
-  What's Missing
-No automation for new videos - No scheduler to detect and auto-analyze new videos. Everything is manual trigger.
-No YouTube API scraping - Videos must already exist in BigQuery. The app doesn't pull new videos from YouTube directly.
-Affiliate validation - Recommends products but doesn't cross-check if the best one is actually being promoted in the video vs what's currently there

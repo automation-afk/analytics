@@ -49,6 +49,15 @@
                             <i class="fas fa-chart-line"></i> Conversion Audit
                         </a>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-clipboard-check"></i> Script Scores
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('dashboard.script_scores_library') }}"><i class="fas fa-table me-1"></i> Library</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('dashboard.script_scores_trends') }}"><i class="fas fa-chart-area me-1"></i> Trends</a></li>
+                        </ul>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('analysis.history') }}">
                             <i class="fas fa-history"></i> History

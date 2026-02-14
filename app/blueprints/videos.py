@@ -6,6 +6,12 @@ from app.blueprints.auth import login_required
 bp = Blueprint('videos', __name__, url_prefix='/videos')
 
 
+def compute_optimization_opportunity(revenue_potential, current_revenue, quality_score):
+    """Compute optimization opportunity: (Revenue Potential - Current Revenue) x (100 - Quality Score) / 100"""
+    gap = max((revenue_potential or 0) - (current_revenue or 0), 0)
+    return round(gap * (100 - (quality_score or 0)) / 100, 2)
+
+
 @bp.route('/<video_id>')
 @login_required
 def detail(video_id):
@@ -59,6 +65,35 @@ def detail(video_id):
     if current_app.local_db:
         transcript_data = current_app.local_db.get_transcript(video_id)
 
+    # Get script score from local database
+    script_score = None
+    if current_app.local_db:
+        script_score = current_app.local_db.get_script_score(video_id)
+
+    # Compute optimization opportunity if script score exists
+    optimization_opportunity = None
+    opt_opp_details = None
+    if script_score and script_score.get('quality_score_total') is not None:
+        try:
+            meta = current_app.bigquery.get_video_metadata_batch([video_id])
+            if video_id in meta:
+                m = meta[video_id]
+                rev_potential = m['revenue_potential']
+                current_rev = m['avg_monthly_revenue']
+                quality = script_score['quality_score_total']
+                optimization_opportunity = compute_optimization_opportunity(
+                    rev_potential, current_rev, quality
+                )
+                opt_opp_details = {
+                    'revenue_potential': rev_potential,
+                    'current_revenue': current_rev,
+                    'quality_score': quality,
+                    'best_video_id': m.get('best_video_id', ''),
+                    'keyword': m.get('main_keyword', ''),
+                }
+        except Exception:
+            pass
+
     return render_template(
         'videos/detail.html',
         analysis=analysis,
@@ -71,6 +106,9 @@ def detail(video_id):
         affiliate_performance=analysis.affiliate_performance,
         existing_links=analysis.existing_links_analysis,
         transcript_data=transcript_data,
+        script_score=script_score,
+        optimization_opportunity=optimization_opportunity,
+        opt_opp_details=opt_opp_details,
         is_analyzing=is_analyzing,
         is_transcribing=is_transcribing
     )

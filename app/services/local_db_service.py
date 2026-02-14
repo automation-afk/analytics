@@ -7,7 +7,8 @@ import os
 
 from app.models import (
     ScriptAnalysis, AffiliateRecommendation, DescriptionAnalysis,
-    ConversionAnalysis, AnalysisResults, Video, RevenueMetrics
+    ConversionAnalysis, AnalysisResults, Video, RevenueMetrics,
+    ScriptScore, GateCheckResult, ApprovedBrand, Partner
 )
 
 logger = logging.getLogger(__name__)
@@ -263,6 +264,76 @@ class LocalDBService:
         )
         """)
 
+        # Table 9: Approved Brands (silo -> brand mapping for gate checks)
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS approved_brands (
+            id {auto_id},
+            silo TEXT NOT NULL UNIQUE,
+            primary_brand TEXT NOT NULL,
+            secondary_brand TEXT,
+            notes TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """)
+
+        # Table 10: Partner List (brands with active revenue relationships)
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS partner_list (
+            id {auto_id},
+            brand_name TEXT NOT NULL UNIQUE,
+            silo TEXT,
+            is_active {int_type} DEFAULT 1,
+            notes TEXT,
+            added_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """)
+
+        # Table 11: Script Scores (comprehensive scoring - gates + quality + multiplier)
+        cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS script_scores (
+            id {auto_id},
+            video_id TEXT NOT NULL,
+            scored_at TEXT NOT NULL,
+            scoring_version TEXT DEFAULT '1.0',
+
+            gates_json TEXT,
+            gates_passed {int_type} DEFAULT 0,
+            gates_total {int_type} DEFAULT 0,
+            all_gates_passed {int_type} DEFAULT 0,
+
+            quality_score_total {real_type},
+            specificity_score {real_type},
+            conversion_arch_score {real_type},
+            retention_arch_score {real_type},
+            authenticity_score {real_type},
+            viewer_respect_score {real_type},
+            production_score {real_type},
+            dimension_details_json TEXT,
+
+            keyword_tier TEXT,
+            domination_score {real_type},
+            context_multiplier {real_type},
+            multiplied_score {real_type},
+            quality_floor {real_type},
+            passes_quality_floor {int_type} DEFAULT 1,
+
+            action_items_json TEXT,
+
+            rizz_score {real_type},
+            rizz_vocal_score {real_type},
+            rizz_copy_score {real_type},
+            rizz_details_json TEXT,
+
+            transcript_length {int_type},
+            model_used TEXT,
+            prompt_version TEXT,
+            cost_estimate {real_type},
+
+            UNIQUE(video_id, scored_at)
+        )
+        """)
+
         # Create indexes (syntax is the same for both)
         indexes = [
             ("idx_script_video_id", "script_analysis", "video_id"),
@@ -273,6 +344,9 @@ class LocalDBService:
             ("idx_transcript_history_video_id", "video_transcripts_history", "video_id"),
             ("idx_comments_video_id", "video_comments", "video_id"),
             ("idx_cta_audit_video_id", "cta_audit_scores", "video_id"),
+            ("idx_script_scores_video_id", "script_scores", "video_id"),
+            ("idx_approved_brands_silo", "approved_brands", "silo"),
+            ("idx_partner_list_brand", "partner_list", "brand_name"),
         ]
 
         for idx_name, table, column in indexes:
@@ -1319,3 +1393,332 @@ class LocalDBService:
         except Exception as e:
             logger.error(f"Error fetching CTA audit scores: {str(e)}")
             return {}
+
+    # ========== Script Scores (Gates + Quality + Multiplier) ==========
+
+    def store_script_score(self, score: ScriptScore) -> bool:
+        """Store or update script score for a video."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            p = self._get_placeholder()
+
+            gates_json = json.dumps([
+                {'gate_name': g.gate_name, 'passed': g.passed, 'failure_reason': g.failure_reason}
+                for g in score.gate_results
+            ]) if score.gate_results else None
+            gates_passed = sum(1 for g in score.gate_results if g.passed) if score.gate_results else 0
+            gates_total = len(score.gate_results) if score.gate_results else 0
+            dimension_details_json = json.dumps(score.dimension_details) if score.dimension_details else None
+            action_items_json = json.dumps(score.action_items) if score.action_items else None
+            rizz_details_json = json.dumps(score.rizz_details) if score.rizz_details else None
+
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO script_scores (
+                    video_id, scored_at, scoring_version,
+                    gates_json, gates_passed, gates_total, all_gates_passed,
+                    quality_score_total, specificity_score, conversion_arch_score,
+                    retention_arch_score, authenticity_score, viewer_respect_score,
+                    production_score, dimension_details_json,
+                    keyword_tier, domination_score, context_multiplier,
+                    multiplied_score, quality_floor, passes_quality_floor,
+                    action_items_json,
+                    rizz_score, rizz_vocal_score, rizz_copy_score, rizz_details_json
+                ) VALUES ({','.join([p]*26)})
+                ON CONFLICT (video_id, scored_at) DO UPDATE SET
+                    scoring_version = EXCLUDED.scoring_version,
+                    gates_json = EXCLUDED.gates_json,
+                    gates_passed = EXCLUDED.gates_passed,
+                    gates_total = EXCLUDED.gates_total,
+                    all_gates_passed = EXCLUDED.all_gates_passed,
+                    quality_score_total = EXCLUDED.quality_score_total,
+                    specificity_score = EXCLUDED.specificity_score,
+                    conversion_arch_score = EXCLUDED.conversion_arch_score,
+                    retention_arch_score = EXCLUDED.retention_arch_score,
+                    authenticity_score = EXCLUDED.authenticity_score,
+                    viewer_respect_score = EXCLUDED.viewer_respect_score,
+                    production_score = EXCLUDED.production_score,
+                    dimension_details_json = EXCLUDED.dimension_details_json,
+                    keyword_tier = EXCLUDED.keyword_tier,
+                    domination_score = EXCLUDED.domination_score,
+                    context_multiplier = EXCLUDED.context_multiplier,
+                    multiplied_score = EXCLUDED.multiplied_score,
+                    quality_floor = EXCLUDED.quality_floor,
+                    passes_quality_floor = EXCLUDED.passes_quality_floor,
+                    action_items_json = EXCLUDED.action_items_json,
+                    rizz_score = EXCLUDED.rizz_score,
+                    rizz_vocal_score = EXCLUDED.rizz_vocal_score,
+                    rizz_copy_score = EXCLUDED.rizz_copy_score,
+                    rizz_details_json = EXCLUDED.rizz_details_json
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO script_scores (
+                    video_id, scored_at, scoring_version,
+                    gates_json, gates_passed, gates_total, all_gates_passed,
+                    quality_score_total, specificity_score, conversion_arch_score,
+                    retention_arch_score, authenticity_score, viewer_respect_score,
+                    production_score, dimension_details_json,
+                    keyword_tier, domination_score, context_multiplier,
+                    multiplied_score, quality_floor, passes_quality_floor,
+                    action_items_json,
+                    rizz_score, rizz_vocal_score, rizz_copy_score, rizz_details_json
+                ) VALUES ({','.join([p]*26)})
+                """
+
+            cursor.execute(query, (
+                score.video_id, score.scored_at.isoformat(), score.scoring_version,
+                gates_json, gates_passed, gates_total,
+                1 if score.all_gates_passed else 0,
+                score.quality_score_total, score.specificity_score,
+                score.conversion_arch_score, score.retention_arch_score,
+                score.authenticity_score, score.viewer_respect_score,
+                score.production_score, dimension_details_json,
+                score.keyword_tier, score.domination_score,
+                score.context_multiplier, score.multiplied_score,
+                score.quality_floor, 1 if score.passes_quality_floor else 0,
+                action_items_json,
+                score.rizz_score, score.rizz_vocal_score, score.rizz_copy_score,
+                rizz_details_json
+            ))
+
+            conn.commit()
+            conn.close()
+            logger.info(f"Stored script score for video {score.video_id}: "
+                        f"quality={score.quality_score_total}, gates={gates_passed}/{gates_total}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error storing script score: {str(e)}")
+            return False
+
+    def get_script_score(self, video_id: str) -> Optional[dict]:
+        """Get the latest script score for a video."""
+        try:
+            row = self._execute_query("""
+            SELECT * FROM script_scores
+            WHERE video_id = ?
+            ORDER BY scored_at DESC LIMIT 1
+            """, (video_id,), fetch='one')
+
+            if not row:
+                return None
+
+            result = dict(row)
+            # Parse JSON fields
+            if result.get('gates_json'):
+                result['gates'] = json.loads(result['gates_json'])
+            else:
+                result['gates'] = []
+            if result.get('dimension_details_json'):
+                result['dimension_details'] = json.loads(result['dimension_details_json'])
+            else:
+                result['dimension_details'] = {}
+            if result.get('action_items_json'):
+                result['action_items'] = json.loads(result['action_items_json'])
+            else:
+                result['action_items'] = []
+
+            if result.get('rizz_details_json'):
+                result['rizz_details'] = json.loads(result['rizz_details_json'])
+            else:
+                result['rizz_details'] = {}
+            result['all_gates_passed'] = bool(result.get('all_gates_passed', 0))
+            result['passes_quality_floor'] = bool(result.get('passes_quality_floor', 1))
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching script score for {video_id}: {str(e)}")
+            return None
+
+    def get_all_script_scores(self) -> list:
+        """Get latest script scores for all scored videos (for library view)."""
+        try:
+            rows = self._execute_query("""
+            SELECT s.* FROM script_scores s
+            INNER JOIN (
+                SELECT video_id, MAX(scored_at) as max_scored
+                FROM script_scores GROUP BY video_id
+            ) latest ON s.video_id = latest.video_id AND s.scored_at = latest.max_scored
+            ORDER BY s.multiplied_score DESC NULLS LAST
+            """, fetch='all')
+
+            results = []
+            for row in (rows or []):
+                r = dict(row)
+                if r.get('gates_json'):
+                    r['gates'] = json.loads(r['gates_json'])
+                if r.get('action_items_json'):
+                    r['action_items'] = json.loads(r['action_items_json'])
+                r['all_gates_passed'] = bool(r.get('all_gates_passed', 0))
+                r['passes_quality_floor'] = bool(r.get('passes_quality_floor', 1))
+                results.append(r)
+            return results
+
+        except Exception as e:
+            logger.error(f"Error fetching all script scores: {str(e)}")
+            return []
+
+    def get_scores_by_month(self) -> list:
+        """Get all script scores with timestamps for trend view (not just latest per video)."""
+        try:
+            rows = self._execute_query("""
+            SELECT video_id, scored_at, quality_score_total, multiplied_score,
+                   rizz_score, all_gates_passed
+            FROM script_scores
+            WHERE quality_score_total IS NOT NULL
+            ORDER BY scored_at ASC
+            """, fetch='all')
+
+            results = []
+            for row in (rows or []):
+                r = dict(row)
+                r['all_gates_passed'] = bool(r.get('all_gates_passed', 0))
+                results.append(r)
+            return results
+
+        except Exception as e:
+            logger.error(f"Error fetching scores by month: {str(e)}")
+            return []
+
+    # ========== Approved Brands ==========
+
+    def get_approved_brands(self) -> list:
+        """Get all approved brand mappings."""
+        try:
+            rows = self._execute_query(
+                "SELECT * FROM approved_brands ORDER BY silo",
+                fetch='all'
+            )
+            return [dict(r) for r in (rows or [])]
+        except Exception as e:
+            logger.error(f"Error fetching approved brands: {str(e)}")
+            return []
+
+    def get_approved_brand_for_silo(self, silo: str) -> Optional[dict]:
+        """Get approved brand for a specific silo."""
+        try:
+            row = self._execute_query(
+                "SELECT * FROM approved_brands WHERE LOWER(silo) = LOWER(?)",
+                (silo,), fetch='one'
+            )
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error fetching approved brand for silo {silo}: {str(e)}")
+            return None
+
+    def store_approved_brand(self, silo: str, primary_brand: str,
+                             secondary_brand: str = None, notes: str = None) -> bool:
+        """Store or update approved brand for a silo."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            p = self._get_placeholder()
+            now = datetime.now().isoformat()
+
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO approved_brands (silo, primary_brand, secondary_brand, notes, updated_at)
+                VALUES ({p}, {p}, {p}, {p}, {p})
+                ON CONFLICT (silo) DO UPDATE SET
+                    primary_brand = EXCLUDED.primary_brand,
+                    secondary_brand = EXCLUDED.secondary_brand,
+                    notes = EXCLUDED.notes,
+                    updated_at = EXCLUDED.updated_at
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO approved_brands (silo, primary_brand, secondary_brand, notes, updated_at)
+                VALUES ({p}, {p}, {p}, {p}, {p})
+                """
+
+            cursor.execute(query, (silo, primary_brand, secondary_brand, notes, now))
+            conn.commit()
+            conn.close()
+            logger.info(f"Stored approved brand: {silo} -> {primary_brand}")
+            return True
+        except Exception as e:
+            logger.error(f"Error storing approved brand: {str(e)}")
+            return False
+
+    def delete_approved_brand(self, silo: str) -> bool:
+        """Delete approved brand for a silo."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM approved_brands WHERE LOWER(silo) = LOWER(?)"
+                           .replace('?', '%s') if self.use_postgres else
+                           "DELETE FROM approved_brands WHERE LOWER(silo) = LOWER(?)",
+                           (silo,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting approved brand: {str(e)}")
+            return False
+
+    # ========== Partner List ==========
+
+    def get_partner_list(self, active_only: bool = True) -> list:
+        """Get partner brands."""
+        try:
+            query = "SELECT * FROM partner_list"
+            if active_only:
+                query += " WHERE is_active = 1"
+            query += " ORDER BY brand_name"
+            rows = self._execute_query(query, fetch='all')
+            return [dict(r) for r in (rows or [])]
+        except Exception as e:
+            logger.error(f"Error fetching partner list: {str(e)}")
+            return []
+
+    def store_partner(self, brand_name: str, silo: str = None,
+                      is_active: bool = True, notes: str = None) -> bool:
+        """Store or update a partner brand."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            p = self._get_placeholder()
+            now = datetime.now().isoformat()
+
+            if self.use_postgres:
+                query = f"""
+                INSERT INTO partner_list (brand_name, silo, is_active, notes, added_at, updated_at)
+                VALUES ({p}, {p}, {p}, {p}, {p}, {p})
+                ON CONFLICT (brand_name) DO UPDATE SET
+                    silo = EXCLUDED.silo,
+                    is_active = EXCLUDED.is_active,
+                    notes = EXCLUDED.notes,
+                    updated_at = EXCLUDED.updated_at
+                """
+            else:
+                query = f"""
+                INSERT OR REPLACE INTO partner_list (brand_name, silo, is_active, notes, added_at, updated_at)
+                VALUES ({p}, {p}, {p}, {p}, {p}, {p})
+                """
+
+            cursor.execute(query, (brand_name, silo, 1 if is_active else 0, notes, now, now))
+            conn.commit()
+            conn.close()
+            logger.info(f"Stored partner: {brand_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error storing partner: {str(e)}")
+            return False
+
+    def delete_partner(self, brand_name: str) -> bool:
+        """Delete a partner brand."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM partner_list WHERE LOWER(brand_name) = LOWER(?)"
+                           .replace('?', '%s') if self.use_postgres else
+                           "DELETE FROM partner_list WHERE LOWER(brand_name) = LOWER(?)",
+                           (brand_name,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting partner: {str(e)}")
+            return False

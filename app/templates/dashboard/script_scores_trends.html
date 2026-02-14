@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Script Score Trends - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h1 class="mb-0">
+                <i class="fas fa-chart-area"></i> Script Score Trends
+            </h1>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('dashboard.script_scores_library') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-table me-1"></i> View Library
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% if chart_data and chart_data.months %}
+    <!-- Channel Toggle -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body py-2">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <small class="fw-bold me-2">Channels:</small>
+                        {% for channel in chart_data.datasets.keys() %}
+                        <div class="form-check form-check-inline mb-0">
+                            <input class="form-check-input channel-toggle" type="checkbox" id="ch_{{ loop.index }}" value="{{ channel }}" checked>
+                            <label class="form-check-label small" for="ch_{{ loop.index }}">{{ channel }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-line me-1"></i> Average Quality Score Over Time
+                        <small class="ms-2 opacity-75" style="cursor:help;"
+                            data-bs-toggle="tooltip" data-bs-placement="right" data-bs-html="true"
+                            title="<b>Quality Score Trend</b><br>Shows the average quality score (0-100) per month, grouped by channel.<br>Each data point = AVG(quality_score_total) for all videos scored that month for that channel.<br>Source: Local script_scores table + BigQuery channel metadata.">
+                            (hover for details)
+                        </small>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="trendChart" style="height: 400px;"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="row mt-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-info-circle me-1"></i> Summary</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        {% set ns = namespace(total_scores=0, total_sum=0) %}
+                        {% for channel, scores in chart_data.datasets.items() %}
+                            {% for s in scores if s is not none %}
+                                {% set ns.total_scores = ns.total_scores + 1 %}
+                                {% set ns.total_sum = ns.total_sum + s %}
+                            {% endfor %}
+                        {% endfor %}
+                        <div class="col-md-3">
+                            <div class="border rounded p-3">
+                                <div class="text-muted small">Channels</div>
+                                <div class="fs-4 fw-bold">{{ chart_data.datasets|length }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-3">
+                                <div class="text-muted small">Months of Data</div>
+                                <div class="fs-4 fw-bold">{{ chart_data.months|length }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-3">
+                                <div class="text-muted small">Total Data Points</div>
+                                <div class="fs-4 fw-bold">{{ ns.total_scores }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="border rounded p-3">
+                                <div class="text-muted small" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                    title="Overall average across all channels and months">Overall Avg Score</div>
+                                <div class="fs-4 fw-bold {% if ns.total_scores > 0 %}{% if ns.total_sum / ns.total_scores >= 70 %}text-success{% elif ns.total_sum / ns.total_scores >= 50 %}text-warning{% else %}text-danger{% endif %}{% endif %}">
+                                    {% if ns.total_scores > 0 %}{{ "%.1f"|format(ns.total_sum / ns.total_scores) }}{% else %}-{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info text-center">
+                <i class="fas fa-info-circle"></i> No score trend data available yet. Score some videos first from their detail page.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if chart_data and chart_data.months %}
+<script type="application/json" id="chartDataJSON">{{ chart_data|tojson }}</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function(el) {
+        new bootstrap.Tooltip(el, { html: true });
+    });
+
+    var rawData = JSON.parse(document.getElementById('chartDataJSON').textContent);
+    var months = rawData.months;
+    var datasets = rawData.datasets;
+
+    // Color palette
+    var colors = [
+        '#0d6efd', '#198754', '#dc3545', '#ffc107', '#0dcaf0',
+        '#6f42c1', '#fd7e14', '#20c997', '#d63384', '#6c757d'
+    ];
+
+    var chartDatasets = [];
+    var channelNames = Object.keys(datasets);
+    channelNames.forEach(function(channel, idx) {
+        chartDatasets.push({
+            label: channel,
+            data: datasets[channel],
+            borderColor: colors[idx % colors.length],
+            backgroundColor: colors[idx % colors.length] + '20',
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.3,
+            spanGaps: true,
+            fill: false
+        });
+    });
+
+    var ctx = document.getElementById('trendChart').getContext('2d');
+    var chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: chartDatasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { usePointStyle: true }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + (context.parsed.y !== null ? context.parsed.y.toFixed(1) : 'N/A');
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    min: 0,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Avg Quality Score'
+                    },
+                    grid: {
+                        color: function(ctx) {
+                            if (ctx.tick.value === 60) return '#ffc10766';
+                            if (ctx.tick.value === 80) return '#19875466';
+                            return '#dee2e620';
+                        }
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Month'
+                    }
+                }
+            }
+        }
+    });
+
+    // Channel toggle
+    document.querySelectorAll('.channel-toggle').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+            var channel = this.value;
+            var dsIndex = channelNames.indexOf(channel);
+            if (dsIndex >= 0) {
+                chart.data.datasets[dsIndex].hidden = !this.checked;
+                chart.update();
+            }
+        });
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

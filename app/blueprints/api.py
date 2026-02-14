@@ -1233,6 +1233,114 @@ def update_preferred_brands():
     return jsonify({'status': 'updated', 'brands': data})
 
 
+# ==================== SCRIPT SCORING (Approved Brands / Partners / Scores) ====================
+
+@bp.route('/approved-brands')
+@login_required
+def get_approved_brands():
+    """Get all approved brand mappings (silo -> brand)."""
+    brands = current_app.local_db.get_approved_brands()
+    return jsonify({'brands': brands, 'count': len(brands)})
+
+
+@bp.route('/approved-brands', methods=['POST'])
+@login_required
+def save_approved_brand():
+    """Add or update an approved brand for a silo.
+
+    Request body:
+        {"silo": "identitytheft", "primary_brand": "Aura", "secondary_brand": "LifeLock", "notes": ""}
+    """
+    data = request.get_json()
+    silo = data.get('silo')
+    primary_brand = data.get('primary_brand')
+
+    if not silo or not primary_brand:
+        return jsonify({'error': 'silo and primary_brand are required'}), 400
+
+    success = current_app.local_db.store_approved_brand(
+        silo=silo,
+        primary_brand=primary_brand,
+        secondary_brand=data.get('secondary_brand'),
+        notes=data.get('notes')
+    )
+    if success:
+        return jsonify({'status': 'saved', 'silo': silo, 'primary_brand': primary_brand})
+    return jsonify({'error': 'Failed to save'}), 500
+
+
+@bp.route('/approved-brands/<silo>', methods=['DELETE'])
+@login_required
+def delete_approved_brand(silo):
+    """Delete approved brand for a silo."""
+    success = current_app.local_db.delete_approved_brand(silo)
+    if success:
+        return jsonify({'status': 'deleted', 'silo': silo})
+    return jsonify({'error': 'Failed to delete'}), 500
+
+
+@bp.route('/partner-list')
+@login_required
+def get_partner_list():
+    """Get all partner brands."""
+    active_only = request.args.get('active_only', 'true').lower() == 'true'
+    partners = current_app.local_db.get_partner_list(active_only=active_only)
+    return jsonify({'partners': partners, 'count': len(partners)})
+
+
+@bp.route('/partner-list', methods=['POST'])
+@login_required
+def save_partner():
+    """Add or update a partner brand.
+
+    Request body:
+        {"brand_name": "Aura", "silo": "identitytheft", "is_active": true, "notes": ""}
+    """
+    data = request.get_json()
+    brand_name = data.get('brand_name')
+
+    if not brand_name:
+        return jsonify({'error': 'brand_name is required'}), 400
+
+    success = current_app.local_db.store_partner(
+        brand_name=brand_name,
+        silo=data.get('silo'),
+        is_active=data.get('is_active', True),
+        notes=data.get('notes')
+    )
+    if success:
+        return jsonify({'status': 'saved', 'brand_name': brand_name})
+    return jsonify({'error': 'Failed to save'}), 500
+
+
+@bp.route('/partner-list/<brand_name>', methods=['DELETE'])
+@login_required
+def delete_partner(brand_name):
+    """Delete a partner brand."""
+    success = current_app.local_db.delete_partner(brand_name)
+    if success:
+        return jsonify({'status': 'deleted', 'brand_name': brand_name})
+    return jsonify({'error': 'Failed to delete'}), 500
+
+
+@bp.route('/script-scores')
+@login_required
+def get_script_scores():
+    """Get all script scores (for library view)."""
+    scores = current_app.local_db.get_all_script_scores()
+    return jsonify({'scores': scores, 'count': len(scores)})
+
+
+@bp.route('/script-scores/<video_id>')
+@login_required
+def get_script_score(video_id):
+    """Get script score for a specific video."""
+    score = current_app.local_db.get_script_score(video_id)
+    if not score:
+        return jsonify({'error': 'No script score found'}), 404
+    return jsonify(score)
+
+
 # ==================== CLIENT-SIDE ACTIVITY TRACKING ====================
 
 @bp.route('/log-activity', methods=['POST'])

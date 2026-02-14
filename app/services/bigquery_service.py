@@ -1298,3 +1298,234 @@ class BigQueryService:
         except Exception as e:
             logger.error(f"Error getting channels: {str(e)}")
             return []
+
+    # ========== Script Scoring Helpers ==========
+
+    def get_video_context(self, video_id: str) -> Dict:
+        """Get keyword, silo, funnel context and domination score for script scoring.
+
+        Uses the required 3-CTE deduplication pattern for domination score:
+        dom_raw -> dom_deduped -> dom_scores, then returns both latest and avg all-time.
+
+        Returns:
+            Dict with keys: main_keyword, silo, presenter, video_title,
+                          latest_domination_score, avg_domination_score
+        """
+        try:
+            query = """
+            WITH general_info AS (
+                SELECT
+                    gi.video_id,
+                    gi.video_title,
+                    gi.main_keyword,
+                    gi.silo,
+                    gi.presenter
+                FROM `company-wide-370010.Digibot.Digibot_General_info` gi
+                WHERE gi.video_id = @video_id
+                LIMIT 1
+            ),
+            dom_raw AS (
+                SELECT DISTINCT r.rank_date, r.keyword, r.channel, r.video_id, r.RankDominationScore
+                FROM `company-wide-370010.Digibot.Rank_domination_score` r
+                INNER JOIN general_info gi ON LOWER(r.keyword) = LOWER(gi.main_keyword)
+            ),
+            dom_deduped AS (
+                SELECT DISTINCT rank_date, keyword, RankDominationScore
+                FROM dom_raw
+            ),
+            dom_scores AS (
+                SELECT rank_date, keyword, ROUND(SUM(RankDominationScore) * 100, 2) as domination_score
+                FROM dom_deduped
+                GROUP BY rank_date, keyword
+            ),
+            latest_dom AS (
+                SELECT keyword, domination_score as latest_domination_score
+                FROM dom_scores
+                WHERE rank_date = (SELECT MAX(rank_date) FROM dom_scores)
+            ),
+            avg_dom AS (
+                SELECT keyword, ROUND(AVG(domination_score), 2) as avg_domination_score
+                FROM dom_scores
+                GROUP BY keyword
+            )
+            SELECT
+                gi.video_title,
+                gi.main_keyword,
+                gi.silo,
+                gi.presenter,
+                ld.latest_domination_score,
+                ad.avg_domination_score
+            FROM general_info gi
+            LEFT JOIN latest_dom ld ON LOWER(ld.keyword) = LOWER(gi.main_keyword)
+            LEFT JOIN avg_dom ad ON LOWER(ad.keyword) = LOWER(gi.main_keyword)
+            """
+
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = list(query_job.result())
+
+            if not results:
+                logger.warning(f"No context found in BigQuery for video {video_id}")
+                return {}
+
+            row = results[0]
+            context = {
+                'video_title': row.video_title or '',
+                'main_keyword': row.main_keyword or '',
+                'silo': row.silo or '',
+                'presenter': row.presenter or '',
+                'latest_domination_score': float(row.latest_domination_score) if row.latest_domination_score is not None else None,
+                'avg_domination_score': float(row.avg_domination_score) if row.avg_domination_score is not None else None,
+            }
+            logger.info(f"Got video context for {video_id}: keyword={context['main_keyword']}, "
+                       f"silo={context['silo']}, dom_score={context['latest_domination_score']}")
+            return context
+
+        except Exception as e:
+            logger.error(f"Error getting video context for {video_id}: {str(e)}")
+            return {}
+
+    def get_sibling_video_ids(self, video_id: str, keyword: str, limit: int = 3) -> List[Dict]:
+        """Get other videos targeting the same keyword group.
+
+        Returns list of dicts with video_id, video_title, main_keyword.
+        """
+        if not keyword:
+            return []
+        try:
+            query = """
+            SELECT
+                gi.video_id,
+                gi.video_title,
+                gi.main_keyword
+            FROM `company-wide-370010.Digibot.Digibot_General_info` gi
+            WHERE LOWER(gi.main_keyword) = LOWER(@keyword)
+              AND gi.video_id != @video_id
+            LIMIT @limit
+            """
+
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("keyword", "STRING", keyword),
+                    bigquery.ScalarQueryParameter("video_id", "STRING", video_id),
+                    bigquery.ScalarQueryParameter("limit", "INT64", limit),
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = list(query_job.result())
+
+            siblings = [
+                {
+                    'video_id': row.video_id,
+                    'video_title': row.video_title or '',
+                    'main_keyword': row.main_keyword or '',
+                }
+                for row in results
+            ]
+            logger.info(f"Found {len(siblings)} sibling videos for keyword '{keyword}'")
+            return siblings
+
+        except Exception as e:
+            logger.error(f"Error getting sibling videos: {str(e)}")
+            return []
+
+    def get_video_metadata_batch(self, video_ids: List[str]) -> Dict[str, Dict]:
+        """Get video metadata + 90d avg revenue + keyword-group max revenue for multiple videos.
+
+        Used by Library View and Optimization Opportunity formula.
+        Revenue Potential = highest 90d avg monthly revenue earned by ANY video
+        targeting the same main_keyword.
+
+        Args:
+            video_ids: List of video IDs to fetch metadata for
+
+        Returns:
+            Dict mapping video_id -> {title, channel, main_keyword, silo,
+                                       avg_monthly_revenue, revenue_potential, best_video_id}
+        """
+        if not video_ids:
+            return {}
+
+        try:
+            query = """
+            WITH video_info AS (
+                SELECT
+                    v.video_id,
+                    v.Video_Title as title,
+                    v.Channel_Code as channel,
+                    g.main_keyword,
+                    g.silo
+                FROM `company-wide-370010.1_Youtube_Metrics_Dump.YT_Video_Registration_V2` v
+                LEFT JOIN `company-wide-370010.Digibot.Digibot_General_info` g
+                    ON v.video_id = g.video_id
+                WHERE v.video_id IN UNNEST(@video_ids)
+            ),
+            trailing_revenue AS (
+                SELECT
+                    video_id,
+                    ROUND(AVG(revenue), 2) as avg_monthly_revenue
+                FROM `company-wide-370010.Digibot.Metrics_by_Month`
+                WHERE metrics_month_year >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+                  AND video_id IN UNNEST(@video_ids)
+                GROUP BY video_id
+            ),
+            all_keyword_revenue AS (
+                SELECT
+                    g.main_keyword,
+                    MAX(COALESCE(tr2.avg_monthly_revenue, 0)) as max_revenue,
+                    ARRAY_AGG(g.video_id ORDER BY COALESCE(tr2.avg_monthly_revenue, 0) DESC LIMIT 1)[OFFSET(0)] as best_video_id
+                FROM `company-wide-370010.Digibot.Digibot_General_info` g
+                LEFT JOIN (
+                    SELECT video_id, ROUND(AVG(revenue), 2) as avg_monthly_revenue
+                    FROM `company-wide-370010.Digibot.Metrics_by_Month`
+                    WHERE metrics_month_year >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+                    GROUP BY video_id
+                ) tr2 ON g.video_id = tr2.video_id
+                WHERE g.main_keyword IS NOT NULL AND TRIM(g.main_keyword) != ''
+                GROUP BY g.main_keyword
+            )
+            SELECT
+                vi.video_id,
+                vi.title,
+                vi.channel,
+                vi.main_keyword,
+                vi.silo,
+                COALESCE(tr.avg_monthly_revenue, 0) as avg_monthly_revenue,
+                COALESCE(akr.max_revenue, 0) as revenue_potential,
+                akr.best_video_id
+            FROM video_info vi
+            LEFT JOIN trailing_revenue tr ON vi.video_id = tr.video_id
+            LEFT JOIN all_keyword_revenue akr
+                ON LOWER(vi.main_keyword) = LOWER(akr.main_keyword)
+            """
+
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter("video_ids", "STRING", video_ids),
+                ]
+            )
+            query_job = self.client.query(query, job_config=job_config)
+            results = list(query_job.result())
+
+            metadata = {}
+            for row in results:
+                metadata[row.video_id] = {
+                    'title': row.title or '',
+                    'channel': row.channel or '',
+                    'main_keyword': row.main_keyword or '',
+                    'silo': row.silo or '',
+                    'avg_monthly_revenue': float(row.avg_monthly_revenue or 0),
+                    'revenue_potential': float(row.revenue_potential or 0),
+                    'best_video_id': row.best_video_id or '',
+                }
+
+            logger.info(f"Fetched metadata batch for {len(metadata)}/{len(video_ids)} videos")
+            return metadata
+
+        except Exception as e:
+            logger.error(f"Error getting video metadata batch: {str(e)}")
+            return {}

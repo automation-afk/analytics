@@ -70,6 +70,18 @@ def create_app(config_name='development'):
     except Exception as e:
         logging.warning(f"Could not load affiliate brands: {e}")
 
+    # Seed approved_brands table from PREFERRED_BRANDS config (if table is empty)
+    try:
+        existing_brands = app.local_db.get_approved_brands()
+        if not existing_brands:
+            preferred = app.config.get('PREFERRED_BRANDS', {})
+            for silo, brand in preferred.items():
+                app.local_db.store_approved_brand(silo=silo, primary_brand=brand)
+            if preferred:
+                logging.info(f"Seeded {len(preferred)} approved brands from config")
+    except Exception as e:
+        logging.warning(f"Could not seed approved brands: {e}")
+
     # Initialize OAuth
     from app.blueprints.auth import init_oauth
     init_oauth(app)

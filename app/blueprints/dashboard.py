@@ -300,6 +300,177 @@ def conversion_audit_export():
     )
 
 
+def compute_optimization_opportunity(revenue_potential, current_revenue, quality_score):
+    """(Revenue Potential - Current Revenue) x (100 - Quality Score) / 100"""
+    gap = max((revenue_potential or 0) - (current_revenue or 0), 0)
+    return round(gap * (100 - (quality_score or 0)) / 100, 2)
+
+
+@bp.route('/dashboard/script-scores')
+@login_required
+def script_scores_library():
+    """Script Scores Library — sortable table of all scored videos."""
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    channel_filter = request.args.get('channel')
+    silo_filter = request.args.get('silo')
+    keyword_search = request.args.get('keyword')
+    gates_filter = request.args.get('gates')  # 'pass' or 'fail'
+    sort_by = request.args.get('sort_by', 'optimization_opportunity')
+    sort_dir = request.args.get('sort_dir', 'desc')
+
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_action(email, 'View Script Scores Library', f'page={page}')
+
+    # 1. Get all scored videos from local DB
+    all_scores = current_app.local_db.get_all_script_scores()
+    if not all_scores:
+        return render_template(
+            'dashboard/script_scores.html',
+            scores=[], page=1, has_more=False,
+            channel_filter=channel_filter, silo_filter=silo_filter,
+            keyword_search=keyword_search, gates_filter=gates_filter,
+            sort_by=sort_by, sort_dir=sort_dir,
+            all_channels=[], all_silos=[]
+        )
+
+    # 2. Get metadata + revenue from BigQuery
+    video_ids = [s['video_id'] for s in all_scores]
+    cache_key = f'script_scores_meta_{hash(tuple(sorted(video_ids)))}'
+    metadata = cache.get(cache_key)
+    if metadata is None:
+        metadata = current_app.bigquery.get_video_metadata_batch(video_ids)
+        cache.set(cache_key, metadata, timeout=600)
+
+    # 3. Merge and compute optimization opportunity
+    merged = []
+    channels_set = set()
+    silos_set = set()
+    for s in all_scores:
+        vid = s['video_id']
+        meta = metadata.get(vid, {})
+        row = {**s, **meta}
+        # Compute optimization opportunity
+        row['optimization_opportunity'] = compute_optimization_opportunity(
+            meta.get('revenue_potential', 0),
+            meta.get('avg_monthly_revenue', 0),
+            s.get('quality_score_total')
+        )
+        row['revenue_potential'] = meta.get('revenue_potential', 0)
+        row['avg_monthly_revenue'] = meta.get('avg_monthly_revenue', 0)
+        # Get top fix action item
+        items = s.get('action_items', [])
+        row['top_fix'] = items[0].get('action', '') if items else ''
+
+        if meta.get('channel'):
+            channels_set.add(meta['channel'])
+        if meta.get('silo'):
+            silos_set.add(meta['silo'])
+
+        merged.append(row)
+
+    # 4. Apply filters
+    if channel_filter:
+        merged = [r for r in merged if r.get('channel') == channel_filter]
+    if silo_filter:
+        merged = [r for r in merged if (r.get('silo') or '').lower() == silo_filter.lower()]
+    if keyword_search:
+        kw = keyword_search.lower()
+        merged = [r for r in merged if kw in (r.get('main_keyword') or '').lower()
+                  or kw in (r.get('title') or '').lower()]
+    if gates_filter == 'pass':
+        merged = [r for r in merged if r.get('all_gates_passed')]
+    elif gates_filter == 'fail':
+        merged = [r for r in merged if not r.get('all_gates_passed')]
+
+    # 5. Sort
+    valid_sort_cols = {
+        'title', 'channel', 'main_keyword', 'silo',
+        'quality_score_total', 'multiplied_score', 'rizz_score',
+        'avg_monthly_revenue', 'revenue_potential', 'optimization_opportunity',
+        'all_gates_passed'
+    }
+    if sort_by not in valid_sort_cols:
+        sort_by = 'optimization_opportunity'
+    reverse = sort_dir == 'desc'
+    merged.sort(key=lambda r: (r.get(sort_by) is not None, r.get(sort_by) or 0), reverse=reverse)
+
+    # 6. Paginate
+    total = len(merged)
+    offset = (page - 1) * per_page
+    page_data = merged[offset:offset + per_page]
+    has_more = offset + per_page < total
+
+    return render_template(
+        'dashboard/script_scores.html',
+        scores=page_data,
+        page=page,
+        has_more=has_more,
+        total=total,
+        channel_filter=channel_filter,
+        silo_filter=silo_filter,
+        keyword_search=keyword_search,
+        gates_filter=gates_filter,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        all_channels=sorted(channels_set),
+        all_silos=sorted(silos_set)
+    )
+
+
+@bp.route('/dashboard/script-scores/trends')
+@login_required
+def script_scores_trends():
+    """Script Scores Trend View — quality score averages over time by channel."""
+    email = session.get('user_email')
+    if email and current_app.activity_logger:
+        current_app.activity_logger.log_action(email, 'View Script Scores Trends')
+
+    # Get all scores with timestamps
+    all_scores = current_app.local_db.get_scores_by_month()
+    if not all_scores:
+        return render_template('dashboard/script_scores_trends.html', chart_data={})
+
+    # Get channel for each video
+    video_ids = list(set(s['video_id'] for s in all_scores))
+    cache_key = f'scores_trend_meta_{hash(tuple(sorted(video_ids)))}'
+    metadata = cache.get(cache_key)
+    if metadata is None:
+        metadata = current_app.bigquery.get_video_metadata_batch(video_ids)
+        cache.set(cache_key, metadata, timeout=600)
+
+    # Group by channel + month
+    from collections import defaultdict
+    channel_month_scores = defaultdict(list)
+    for s in all_scores:
+        meta = metadata.get(s['video_id'], {})
+        channel = meta.get('channel', 'Unknown')
+        scored_at = s.get('scored_at', '')
+        month = scored_at[:7] if scored_at else ''  # "YYYY-MM"
+        if month and s.get('quality_score_total') is not None:
+            channel_month_scores[(channel, month)].append(s['quality_score_total'])
+
+    # Build chart data: {months: [...], datasets: {channel: [avg, avg, ...]}}
+    all_months = sorted(set(k[1] for k in channel_month_scores.keys()))
+    all_channels = sorted(set(k[0] for k in channel_month_scores.keys()))
+
+    datasets = {}
+    for channel in all_channels:
+        datasets[channel] = []
+        for month in all_months:
+            scores = channel_month_scores.get((channel, month), [])
+            avg = round(sum(scores) / len(scores), 1) if scores else None
+            datasets[channel].append(avg)
+
+    chart_data = {
+        'months': all_months,
+        'datasets': datasets
+    }
+
+    return render_template('dashboard/script_scores_trends.html', chart_data=chart_data)
+
+
 @bp.route('/dashboard/debug/link-placements')
 @login_required
 def debug_link_placements():

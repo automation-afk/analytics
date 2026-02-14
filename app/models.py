@@ -140,6 +140,71 @@ class AffiliatePerformance:
 
 
 @dataclass
+class GateCheckResult:
+    """Single gate check result (pass/fail)."""
+    gate_name: str
+    passed: bool
+    failure_reason: str = ""
+
+
+@dataclass
+class ScriptScore:
+    """Comprehensive script scoring results (gates + quality + context multiplier)."""
+    video_id: str
+    scored_at: datetime
+    scoring_version: str = "1.0"
+
+    # Gate Checks (Layer 1)
+    gate_results: List[GateCheckResult] = field(default_factory=list)
+    all_gates_passed: bool = True
+
+    # Quality Score - 6 dimensions (Layer 2)
+    quality_score_total: Optional[float] = None  # 0-100
+    specificity_score: Optional[float] = None  # 0-25
+    conversion_arch_score: Optional[float] = None  # 0-20
+    retention_arch_score: Optional[float] = None  # 0-20
+    authenticity_score: Optional[float] = None  # 0-15
+    viewer_respect_score: Optional[float] = None  # 0-10
+    production_score: Optional[float] = None  # 0-10
+    dimension_details: Optional[Dict] = None  # Sub-scores per dimension
+
+    # Context Multiplier (Layer 3)
+    keyword_tier: Optional[str] = None
+    domination_score: Optional[float] = None
+    context_multiplier: Optional[float] = None
+    multiplied_score: Optional[float] = None
+    quality_floor: Optional[float] = None
+    passes_quality_floor: bool = True
+
+    # Action Items
+    action_items: List[Dict] = field(default_factory=list)
+
+    # Rizz Score (Phase 3)
+    rizz_score: Optional[float] = None
+    rizz_vocal_score: Optional[float] = None
+    rizz_copy_score: Optional[float] = None
+    rizz_details: Optional[Dict] = None
+
+
+@dataclass
+class ApprovedBrand:
+    """Approved brand for a silo."""
+    silo: str
+    primary_brand: str
+    secondary_brand: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@dataclass
+class Partner:
+    """Revenue partner brand."""
+    brand_name: str
+    silo: Optional[str] = None
+    is_active: bool = True
+    notes: Optional[str] = None
+
+
+@dataclass
 class AnalysisResults:
     """Combined analysis results for a video."""
     video: Video
@@ -150,6 +215,7 @@ class AnalysisResults:
     conversion_analysis: Optional[ConversionAnalysis] = None
     affiliate_performance: List[AffiliatePerformance] = field(default_factory=list)
     existing_links_analysis: Optional[Dict] = None
+    script_score: Optional[ScriptScore] = None
 
 
 @dataclass

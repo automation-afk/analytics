@@ -53,6 +53,11 @@ class Config:
         'PC': 'Aura',
     }
 
+    # Script Scoring System
+    SCORING_PROMPT_VERSION = '1.0'
+    SCORING_MODEL = 'claude-sonnet-4-20250514'
+
+
 
 class DevelopmentConfig(Config):
     """Development configuration."""

@@ -55,7 +55,7 @@
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="card text-center">
-                <div class="card-body">
+                <div class="card-body" style="cursor:help;" data-bs-toggle="tooltip" data-bs-html="true" title="<b>Total Revenue</b><br>Sum of all affiliate revenue for this video.<br>Source: BigQuery Revenue_Metrics table (all-time).">
                     <h6 class="text-muted">Revenue</h6>
                     <h3 class="text-success">{{ revenue_metrics.revenue | format_currency }}</h3>
                 </div>
@@ -63,7 +63,7 @@
         </div>
         <div class="col-md-3">
             <div class="card text-center">
-                <div class="card-body">
+                <div class="card-body" style="cursor:help;" data-bs-toggle="tooltip" data-bs-html="true" title="<b>Total Clicks</b><br>Sum of all affiliate link clicks tracked.<br>Source: BigQuery Revenue_Metrics table.">
                     <h6 class="text-muted">Clicks</h6>
                     <h3 class="text-primary">{{ revenue_metrics.clicks | format_number }}</h3>
                 </div>
@@ -71,7 +71,7 @@
         </div>
         <div class="col-md-3">
             <div class="card text-center">
-                <div class="card-body">
+                <div class="card-body" style="cursor:help;" data-bs-toggle="tooltip" data-bs-html="true" title="<b>Total Sales</b><br>Completed purchases attributed to this video's affiliate links.<br>Source: BigQuery Revenue_Metrics table.">
                     <h6 class="text-muted">Sales</h6>
                     <h3 class="text-info">{{ revenue_metrics.sales | format_number }}</h3>
                 </div>
@@ -79,7 +79,7 @@
         </div>
         <div class="col-md-3">
             <div class="card text-center">
-                <div class="card-body">
+                <div class="card-body" style="cursor:help;" data-bs-toggle="tooltip" data-bs-html="true" title="<b>Organic Views</b><br>Total organic video views.<br>Source: BigQuery YT_Video_Registration_V2 table.">
                     <h6 class="text-muted">Views</h6>
                     <h3 class="text-warning">{{ revenue_metrics.organic_views | format_number }}</h3>
                 </div>
@@ -109,12 +109,238 @@
         </div>
     </div>
 
+    <!-- ==================== SCRIPT SCORE (New Scoring System) ==================== -->
+    {% if script_score %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card" id="scriptScoreCard">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-clipboard-check"></i> Script Score
+                        {% if script_score.all_gates_passed %}
+                        <span class="badge bg-success ms-2">Gates: PASS</span>
+                        {% else %}
+                        <span class="badge bg-danger ms-2">Gates: FAIL</span>
+                        {% endif %}
+                        {% if script_score.quality_score_total is not none %}
+                        <span class="badge {% if script_score.quality_score_total >= 80 %}bg-success{% elif script_score.quality_score_total >= 60 %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-1">
+                            {{ "%.0f"|format(script_score.quality_score_total) }}/100
+                        </span>
+                        {% endif %}
+                        {% if script_score.multiplied_score is not none %}
+                        <span class="badge bg-info ms-1" title="Quality Score x Context Multiplier">
+                            Weighted: {{ "%.0f"|format(script_score.multiplied_score) }}
+                        </span>
+                        {% endif %}
+                    </h5>
+                    <button class="btn btn-sm btn-outline-light" onclick="openDetailModal('scriptScoreCard', 'Script Score', 'bg-dark', 'fas fa-clipboard-check')">
+                        <i class="fas fa-expand-alt"></i>
+                    </button>
+                </div>
+                <div class="card-body" id="scriptScoreCard-card-body">
+                    <div class="row">
+                        <!-- Gate Checks -->
+                        <div class="col-md-3">
+                            <h6 class="fw-bold mb-2"><i class="fas fa-shield-alt me-1"></i> Gate Checks</h6>
+                            <table class="table table-sm table-borderless mb-0">
+                                <tbody>
+                                {% for gate in script_score.gates %}
+                                <tr>
+                                    <td class="py-1" style="width: 24px;">
+                                        {% if gate.passed %}
+                                        <i class="fas fa-check-circle text-success"></i>
+                                        {% else %}
+                                        <i class="fas fa-times-circle text-danger"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td class="py-1">
+                                        <span {% if gate.failure_reason %}data-bs-toggle="tooltip" data-bs-placement="right" title="{{ gate.failure_reason }}"{% endif %}>
+                                            {{ gate.gate_name }}
+                                        </span>
+                                        {% if not gate.passed and gate.failure_reason %}
+                                        <br><small class="text-danger d-none d-lg-inline">{{ gate.failure_reason[:80] }}{% if gate.failure_reason|length > 80 %}...{% endif %}</small>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Quality Score Breakdown -->
+                        <div class="col-md-5">
+                            <h6 class="fw-bold mb-2" style="cursor:help;"
+                                data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                title="<b>Quality Score</b><br>Sum of 6 weighted dimensions (100 pts max).<br>Scored by Claude AI from transcript text.<br>Each dimension has sub-scores evaluated against specific criteria."><i class="fas fa-star me-1"></i> Quality Score: {{ "%.0f"|format(script_score.quality_score_total or 0) }}/100</h6>
+                            {% set dimensions = [
+                                ('Specificity & Proof', script_score.specificity_score, 25, 'primary', 'Sub-scores: Quantified Claims (0-5), Feature-Benefit Cascade (0-5), Proof Density (0-5), Generic Content Ratio (0-5), LLM Smell (0-5). Measures credibility depth and uniqueness of claims.'),
+                                ('Conversion Architecture', script_score.conversion_arch_score, 20, 'success', 'Sub-scores: CTA Placement (0-5), Frame Control (0-5), Decisiveness (0-4), Risk Reversal (0-3), Cognitive Leakage (0-3). Measures how well the script drives toward action.'),
+                                ('Retention Architecture', script_score.retention_arch_score, 20, 'info', 'Sub-scores: Hook Specificity (0-5), Payoff Timing (0-4), Chapter Quality (0-4), Section Ordering (0-4), Reveal Quality (0-3). Measures viewer engagement structure.'),
+                                ('Authenticity & Voice', script_score.authenticity_score, 15, 'warning', 'Sub-scores: Personal Anecdote (0-4), Personality Moments (0-4), Natural Language (0-3), LLM Voice (0-2), Survivability 2030 (0-2). Measures human authenticity.'),
+                                ('Viewer Respect', script_score.viewer_respect_score, 10, 'secondary', 'Sub-scores: Cognitive Load (0-3), Funnel Depth (0-3), Insider Knowledge (0-2), Reddit Skeptic (0-2). Measures viewer sophistication respect.'),
+                                ('Production Standards', script_score.production_score, 10, 'dark', 'Sub-scores: B-Roll References (0-4), Visual Evidence (0-3), Screen Hygiene (0-3). Measures production quality signals from transcript.'),
+                            ] %}
+                            {% for name, score, max_val, color, tooltip_text in dimensions %}
+                            <div class="mb-1" style="cursor:help;"
+                                data-bs-toggle="tooltip" data-bs-placement="right" data-bs-html="true"
+                                title="<b>{{ name }} ({{ '%.0f'|format(score or 0) }}/{{ max_val }})</b><br>{{ tooltip_text }}">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">{{ name }}</small>
+                                    <small class="fw-bold">{{ "%.0f"|format(score or 0) }}/{{ max_val }}</small>
+                                </div>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar bg-{{ color }}" role="progressbar"
+                                         style="width: {{ ((score or 0) / max_val * 100)|round }}%"
+                                         aria-valuenow="{{ score or 0 }}" aria-valuemin="0" aria-valuemax="{{ max_val }}">
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Context Multiplier + Action Items -->
+                        <div class="col-md-4">
+                            <!-- Context Multiplier -->
+                            {% if script_score.context_multiplier is not none %}
+                            <div class="mb-3 p-2 bg-light rounded">
+                                <h6 class="fw-bold mb-1"><i class="fas fa-calculator me-1"></i> Context Multiplier</h6>
+                                <div class="d-flex justify-content-between small" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                    title="<b>Keyword Tier</b><br>Determined by silo category from Digibot_General_info.<br>Tier 1 (money silos) get higher multipliers, Tier 2 (informational) get lower.">
+                                    <span>Keyword Tier:</span>
+                                    <span class="fw-bold">{{ script_score.keyword_tier|default('N/A')|upper }}</span>
+                                </div>
+                                {% if script_score.domination_score is not none %}
+                                <div class="d-flex justify-content-between small" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                    title="<b>Rank Domination Score</b><br>= SUM(RankDominationScore) &times; 100 per keyword<br>Source: Rank_domination_score table (latest rank_date)<br>Uses 3-CTE deduplication pattern (dom_raw &rarr; dom_deduped &rarr; dom_scores).<br>Higher % = more SERP coverage for this keyword.">
+                                    <span>Domination:</span>
+                                    <span class="fw-bold">{{ "%.0f"|format(script_score.domination_score) }}%</span>
+                                </div>
+                                {% endif %}
+                                <div class="d-flex justify-content-between small" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                    title="<b>Context Multiplier</b><br>Based on keyword tier + domination score.<br>Tier1 + high dom (&ge;90%): 1.2x<br>Tier1 + mid dom (60-89%): 1.1x<br>Tier1 + low dom (&lt;60%): 1.0x<br>Tier2 + high dom: 1.0x<br>Tier2 + low dom: 0.9x">
+                                    <span>Multiplier:</span>
+                                    <span class="fw-bold">{{ script_score.context_multiplier }}x</span>
+                                </div>
+                                <div class="d-flex justify-content-between small" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                    title="<b>Quality Floor</b><br>Minimum quality score required for this context bucket.<br>If quality score &lt; floor, the video needs improvement before the multiplier fully applies.{% if not script_score.passes_quality_floor %}<br><br><span class='text-danger'>⚠ Below quality floor!</span>{% endif %}">
+                                    <span>Quality Floor:</span>
+                                    <span class="fw-bold {% if not script_score.passes_quality_floor %}text-danger{% endif %}">
+                                        {{ "%.0f"|format(script_score.quality_floor or 0) }}
+                                        {% if not script_score.passes_quality_floor %}<i class="fas fa-exclamation-triangle"></i>{% endif %}
+                                    </span>
+                                </div>
+                                <hr class="my-1">
+                                <div class="d-flex justify-content-between">
+                                    <span class="fw-bold" style="cursor:help;"
+                                        data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                        title="<b>Weighted Score</b><br>= Quality Score &times; Context Multiplier<br>= {{ '%.0f'|format(script_score.quality_score_total or 0) }} &times; {{ script_score.context_multiplier }}x<br>= <b>{{ '%.0f'|format(script_score.multiplied_score or 0) }}</b>">Weighted Score:</span>
+                                    <span class="fw-bold fs-5 {% if script_score.multiplied_score >= 80 %}text-success{% elif script_score.multiplied_score >= 60 %}text-warning{% else %}text-danger{% endif %}">
+                                        {{ "%.0f"|format(script_score.multiplied_score or 0) }}
+                                    </span>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Optimization Opportunity -->
+                            {% if optimization_opportunity is not none %}
+                            <div class="mb-3 p-2 bg-light rounded border border-warning">
+                                <h6 class="fw-bold mb-1"><i class="fas fa-lightbulb text-warning me-1"></i> Optimization Opportunity</h6>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold fs-4 {% if optimization_opportunity >= 100 %}text-danger{% elif optimization_opportunity >= 50 %}text-warning{% else %}text-success{% endif %}" style="cursor:help;"
+                                        data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                        title="<b>Optimization Opportunity</b><br>= (Revenue Potential - Current Revenue) &times; (100 - Quality Score) / 100<br>= (${{ '%.2f'|format(opt_opp_details.revenue_potential) }} - ${{ '%.2f'|format(opt_opp_details.current_revenue) }}) &times; (100 - {{ '%.0f'|format(opt_opp_details.quality_score) }}) / 100<br>= <b>${{ '%.2f'|format(optimization_opportunity) }}</b><br><br>Revenue Potential = best revenue for keyword '{{ opt_opp_details.keyword|e }}'{% if opt_opp_details.best_video_id %} ({{ opt_opp_details.best_video_id }}){% endif %}">
+                                        ${{ "%.2f"|format(optimization_opportunity) }}
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-content-between small mt-1" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                    title="<b>Revenue Potential</b><br>= highest 90d avg monthly revenue earned by any video targeting keyword '{{ opt_opp_details.keyword|e }}'<br>Source: Metrics_by_Month (90d avg) + Digibot_General_info (keyword grouping)">
+                                    <span>Rev Potential:</span>
+                                    <span class="fw-bold">${{ "%.2f"|format(opt_opp_details.revenue_potential) }}</span>
+                                </div>
+                                <div class="d-flex justify-content-between small" style="cursor:help;"
+                                    data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                    title="<b>Current Revenue</b><br>= this video's 90d avg monthly revenue<br>Source: Metrics_by_Month WHERE date >= 90 days ago">
+                                    <span>Current Rev:</span>
+                                    <span class="fw-bold">${{ "%.2f"|format(opt_opp_details.current_revenue) }}</span>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Rizz Score -->
+                            {% if script_score.rizz_score is not none %}
+                            <div class="mb-3 p-2 bg-light rounded border border-info">
+                                <h6 class="fw-bold mb-1"><i class="fas fa-fire text-danger me-1"></i> Rizz Score</h6>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold fs-4 {% if script_score.rizz_score >= 80 %}text-success{% elif script_score.rizz_score >= 60 %}text-warning{% elif script_score.rizz_score >= 40 %}text-body{% else %}text-danger{% endif %}" style="cursor:help;"
+                                        data-bs-toggle="tooltip" data-bs-placement="left" data-bs-html="true"
+                                        title="<b>Rizz Score</b><br>= 60% Vocal + 40% Copy<br>= ({{ '%.0f'|format(script_score.rizz_vocal_score or 0) }}/60 vocal) + ({{ '%.0f'|format(script_score.rizz_copy_score or 0) }}/40 copy)<br>= <b>{{ '%.0f'|format(script_score.rizz_score) }}/100</b><br><br>{% if script_score.rizz_score >= 80 %}Magnetic{% elif script_score.rizz_score >= 60 %}Solid{% elif script_score.rizz_score >= 40 %}Flat{% else %}Monotone{% endif %}">
+                                        {{ "%.0f"|format(script_score.rizz_score) }}/100
+                                    </span>
+                                    <span class="badge {% if script_score.rizz_score >= 80 %}bg-success{% elif script_score.rizz_score >= 60 %}bg-warning text-dark{% elif script_score.rizz_score >= 40 %}bg-secondary{% else %}bg-danger{% endif %}">
+                                        {% if script_score.rizz_score >= 80 %}Magnetic{% elif script_score.rizz_score >= 60 %}Solid{% elif script_score.rizz_score >= 40 %}Flat{% else %}Monotone{% endif %}
+                                    </span>
+                                </div>
+                                <div class="progress mt-2" style="height: 12px;">
+                                    <div class="progress-bar bg-danger" role="progressbar"
+                                         style="width: {{ ((script_score.rizz_vocal_score or 0) / 100 * 100)|round }}%"
+                                         data-bs-toggle="tooltip" data-bs-placement="top"
+                                         title="Vocal: {{ '%.0f'|format(script_score.rizz_vocal_score or 0) }}/60 — Derived from Hume AI emotion data (conviction, consistency, CTA delta, pacing)">
+                                    </div>
+                                    <div class="progress-bar bg-warning" role="progressbar"
+                                         style="width: {{ ((script_score.rizz_copy_score or 0) / 100 * 100)|round }}%"
+                                         data-bs-toggle="tooltip" data-bs-placement="top"
+                                         title="Copy: {{ '%.0f'|format(script_score.rizz_copy_score or 0) }}/40 — Derived from transcript text (personality, sentence variation, decisive language, first-person experience)">
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between small mt-1">
+                                    <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                        title="<b>Vocal Score (60% weight)</b><br>Sources: Hume AI emotion data<br>Sub-metrics: Conviction, Consistency, CTA Delta, Filler Density, Pacing Variation<br>Each scored 0-20, total raw 0-100, then &times; 0.60">
+                                        Vocal: {{ "%.0f"|format(script_score.rizz_vocal_score or 0) }}/60
+                                    </span>
+                                    <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
+                                        title="<b>Copy Score (40% weight)</b><br>Sources: Transcript text analysis<br>Sub-metrics: Personality Density, Sentence Variation, Decisive Language, First-Person Experience<br>Each scored 0-25, total raw 0-100, then &times; 0.40">
+                                        Copy: {{ "%.0f"|format(script_score.rizz_copy_score or 0) }}/40
+                                    </span>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- Top 3 Action Items -->
+                            {% if script_score.action_items %}
+                            <h6 class="fw-bold mb-2"><i class="fas fa-tasks me-1"></i> Top Action Items</h6>
+                            {% for item in script_score.action_items[:3] %}
+                            <div class="mb-2 p-2 border-start border-3 {% if loop.index == 1 %}border-danger{% elif loop.index == 2 %}border-warning{% else %}border-info{% endif %} bg-light rounded-end">
+                                <small class="text-muted d-block">{{ item.dimension|default('') }}</small>
+                                <small class="fw-bold">{{ item.action|default('') }}</small>
+                                {% if item.specific_detail %}
+                                <small class="d-block text-muted d-none d-lg-block">{{ item.specific_detail[:120] }}{% if item.specific_detail|length > 120 %}...{% endif %}</small>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="text-end mt-2">
+                        <small class="text-muted">Scored: {{ script_score.scored_at[:16] if script_score.scored_at else 'N/A' }} | v{{ script_score.scoring_version|default('1.0') }}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="row">
-        <!-- Script Analysis -->
+        <!-- Script Analysis (Legacy) -->
         <div class="col-md-6 mb-4">
             <div class="card h-100" id="scriptCard">
                 <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> Script Quality Analysis <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="AI-analyzed by Claude from the video transcript. Scores are 1-10 based on clarity, engagement, pacing, and persuasion techniques."></i></h5>
+                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="AI-analyzed by Claude from the video transcript. Scores are 1-10 based on clarity, engagement, pacing, and persuasion techniques.">Script Quality Analysis</span> {% if script_score %}<span class="badge bg-light text-primary ms-1">Legacy</span>{% endif %}</h5>
                     {% if script_analysis %}
                     <button class="btn btn-sm btn-outline-light" onclick="openDetailModal('scriptCard', 'Script Quality Analysis', 'bg-primary', 'fas fa-file-alt')">
                         <i class="fas fa-expand-alt"></i>
@@ -126,7 +352,7 @@
                         <div class="mb-3">
                             <div class="row">
                                 <div class="col-6">
-                                    <h6>Overall Quality <i class="fas fa-info-circle text-white-50 small info-tip" data-bs-toggle="tooltip" title="Clarity, structure, pacing, and overall engagement of the script"></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Clarity, structure, pacing, and overall engagement of the script">Overall Quality</h6>
                                     <div class="progress" style="height: 25px;">
                                         <div class="progress-bar bg-success" role="progressbar"
                                              style="width: {{ (script_analysis.script_quality_score / 10 * 100)|int }}%">
@@ -135,7 +361,7 @@
                                     </div>
                                 </div>
                                 <div class="col-6">
-                                    <h6>Hook Effectiveness <i class="fas fa-info-circle text-white-50 small info-tip" data-bs-toggle="tooltip" title="How well the opening 30 seconds captures attention and drives retention"></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="How well the opening 30 seconds captures attention and drives retention">Hook Effectiveness</h6>
                                     <div class="progress" style="height: 25px;">
                                         <div class="progress-bar bg-info" role="progressbar"
                                              style="width: {{ (script_analysis.hook_effectiveness_score / 10 * 100)|int }}%">
@@ -149,7 +375,7 @@
                         <div class="mb-3">
                             <div class="row">
                                 <div class="col-6">
-                                    <h6>Call to Action <i class="fas fa-info-circle text-white-50 small info-tip" data-bs-toggle="tooltip" title="Strength and clarity of viewer directives (subscribe, click, buy)"></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Strength and clarity of viewer directives (subscribe, click, buy)">Call to Action</h6>
                                     <div class="progress" style="height: 25px;">
                                         <div class="progress-bar bg-warning" role="progressbar"
                                              style="width: {{ (script_analysis.call_to_action_score / 10 * 100)|int }}%">
@@ -158,7 +384,7 @@
                                     </div>
                                 </div>
                                 <div class="col-6">
-                                    <h6>Persuasion <i class="fas fa-info-circle text-white-50 small info-tip" data-bs-toggle="tooltip" title="Use of persuasion techniques: social proof, urgency, authority, and emotional triggers"></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Use of persuasion techniques: social proof, urgency, authority, and emotional triggers">Persuasion</h6>
                                     <div class="progress" style="height: 25px;">
                                         <div class="progress-bar bg-danger" role="progressbar"
                                              style="width: {{ (script_analysis.persuasion_effectiveness_score / 10 * 100)|int }}%">
@@ -171,7 +397,7 @@
 
                         {% if script_analysis.key_strengths %}
                         <div class="mb-3">
-                            <h6><i class="fas fa-check-circle text-success"></i> Key Strengths: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude from transcript analysis. Highlights what the script does well in engaging viewers."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude from transcript analysis. Highlights what the script does well in engaging viewers."><i class="fas fa-check-circle text-success"></i> Key Strengths:</h6>
                             <ul class="list-unstyled">
                                 {% for strength in script_analysis.key_strengths %}
                                 <li><i class="fas fa-arrow-right text-success me-2"></i>{{ strength }}</li>
@@ -182,7 +408,7 @@
 
                         {% if script_analysis.improvement_areas %}
                         <div class="mb-3">
-                            <h6><i class="fas fa-exclamation-triangle text-warning"></i> Improvement Areas: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude. Areas where the script could be improved for better retention or conversions."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude. Areas where the script could be improved for better retention or conversions."><i class="fas fa-exclamation-triangle text-warning"></i> Improvement Areas:</h6>
                             <ul class="list-unstyled">
                                 {% for area in script_analysis.improvement_areas %}
                                 <li><i class="fas fa-arrow-right text-warning me-2"></i>{{ area }}</li>
@@ -193,7 +419,7 @@
 
                         {% if script_analysis.persuasion_techniques %}
                         <div>
-                            <h6>Persuasion Techniques Used: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-detected by Claude. Techniques like social proof, scarcity, authority, reciprocity found in the script."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-detected by Claude. Techniques like social proof, scarcity, authority, reciprocity found in the script.">Persuasion Techniques Used:</h6>
                             <div>
                                 {% for technique in script_analysis.persuasion_techniques %}
                                 <span class="badge bg-secondary me-1 mb-1">{{ technique }}</span>
@@ -224,19 +450,19 @@
                     <ul class="nav nav-tabs nav-sm mb-3" id="affInlineTab" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active py-1 px-2" id="aff-perf-tab" data-bs-toggle="tab" data-bs-target="#aff-perf" type="button" role="tab">
-                                <i class="fas fa-chart-bar me-1"></i> BigQuery Data <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)"></i>
+                                <i class="fas fa-chart-bar me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)">BigQuery Data</span>
                                 {% if affiliate_performance %}<span class="badge bg-success ms-1 small">{{ affiliate_performance|length }}</span>{% endif %}
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
                             <button class="nav-link py-1 px-2" id="aff-links-tab" data-bs-toggle="tab" data-bs-target="#aff-links" type="button" role="tab">
-                                <i class="fas fa-link me-1"></i> Links <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="URLs extracted from description using pattern matching. Affiliate detection based on URL shorteners, tracking params, and known networks."></i>
+                                <i class="fas fa-link me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="URLs extracted from description using pattern matching. Affiliate detection based on URL shorteners, tracking params, and known networks.">Links</span>
                                 {% if existing_links %}<span class="badge bg-info ms-1 small">{{ existing_links.total_links }}</span>{% endif %}
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
                             <button class="nav-link py-1 px-2" id="aff-ai-tab" data-bs-toggle="tab" data-bs-target="#aff-ai" type="button" role="tab">
-                                <i class="fas fa-robot me-1"></i> AI <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="AI-generated product recommendations by Claude based on video content, audience, and real performance data when available."></i>
+                                <i class="fas fa-robot me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="AI-generated product recommendations by Claude based on video content, audience, and real performance data when available.">AI</span>
                                 {% if affiliate_recs %}<span class="badge bg-warning text-dark ms-1 small">{{ affiliate_recs|length }}</span>{% endif %}
                             </button>
                         </li>
@@ -379,7 +605,7 @@
         <div class="col-md-6 mb-4">
             <div class="card h-100" id="descriptionCard">
                 <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-align-left"></i> Description CTR Analysis <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="AI-analyzed by Claude. Evaluates description quality, SEO optimization, and CTA effectiveness. Traffic data is from YouTube Analytics API."></i></h5>
+                    <h5 class="mb-0"><i class="fas fa-align-left"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="AI-analyzed by Claude. Evaluates description quality, SEO optimization, and CTA effectiveness. Traffic data is from YouTube Analytics API.">Description CTR Analysis</span></h5>
                     {% if description_analysis %}
                     <button class="btn btn-sm btn-outline-light" onclick="openDetailModal('descriptionCard', 'Description CTR Analysis', 'bg-info', 'fas fa-align-left')">
                         <i class="fas fa-expand-alt"></i>
@@ -401,15 +627,15 @@
                     {% if description_analysis %}
                         <div class="row mb-3">
                             <div class="col-4 text-center">
-                                <h6>Quality Score <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Formatting, readability, completeness, and link organization"></i></h6>
+                                <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Formatting, readability, completeness, and link organization">Quality Score</h6>
                                 <h3 class="text-primary">{{ "%.1f" | format(description_analysis.description_quality_score) }}/10</h3>
                             </div>
                             <div class="col-4 text-center">
-                                <h6>CTA Score <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Strength of call-to-action elements that drive clicks and engagement"></i></h6>
+                                <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Strength of call-to-action elements that drive clicks and engagement">CTA Score</h6>
                                 <h3 class="text-success">{{ "%.1f" | format(description_analysis.cta_effectiveness_score) }}/10</h3>
                             </div>
                             <div class="col-4 text-center">
-                                <h6>SEO Score <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Keyword usage, discoverability, and search optimization quality"></i></h6>
+                                <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Keyword usage, discoverability, and search optimization quality">SEO Score</h6>
                                 <h3 class="text-info">{{ "%.1f" | format(description_analysis.seo_score) }}/10</h3>
                             </div>
                         </div>
@@ -417,7 +643,7 @@
                         {# YT Analytics Traffic Source Data #}
                         {% if description_analysis.yt_by_traffic_source %}
                         <div class="mb-3">
-                            <h6><i class="fas fa-chart-pie text-primary"></i> Traffic Sources (Last 90 Days) <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Source: YouTube Analytics API. Shows views, CTR, and avg watch % by traffic source (search, browse, suggested, etc.) over the last 90 days."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="Source: YouTube Analytics API. Shows views, CTR, and avg watch % by traffic source (search, browse, suggested, etc.) over the last 90 days."><i class="fas fa-chart-pie text-primary"></i> Traffic Sources (Last 90 Days)</h6>
                             <div class="small">
                                 <div class="d-flex justify-content-between text-muted mb-1">
                                     <span>Total Views: <strong>{{ description_analysis.yt_total_views | format_number }}</strong></span>
@@ -461,7 +687,7 @@
 
                         {% if description_analysis.strengths %}
                         <div class="mb-3">
-                            <h6><i class="fas fa-check-circle text-success"></i> Strengths: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude. What the description does well for SEO, CTR, and viewer engagement."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude. What the description does well for SEO, CTR, and viewer engagement."><i class="fas fa-check-circle text-success"></i> Strengths:</h6>
                             <ul class="mb-0">
                                 {% for strength in description_analysis.strengths %}
                                 <li>{{ strength }}</li>
@@ -472,7 +698,7 @@
 
                         {% if description_analysis.missing_elements %}
                         <div class="mb-3">
-                            <h6><i class="fas fa-exclamation-circle text-danger"></i> Missing Elements: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude. Key elements absent from the description that could improve discoverability and clicks."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude. Key elements absent from the description that could improve discoverability and clicks."><i class="fas fa-exclamation-circle text-danger"></i> Missing Elements:</h6>
                             <ul class="mb-0">
                                 {% for element in description_analysis.missing_elements %}
                                 <li>{{ element }}</li>
@@ -483,7 +709,7 @@
 
                         {% if description_analysis.optimization_suggestions %}
                         <div>
-                            <h6><i class="fas fa-lightbulb text-warning"></i> Optimization Suggestions: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-generated by Claude. Actionable recommendations to improve the description for better CTR and SEO performance."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-generated by Claude. Actionable recommendations to improve the description for better CTR and SEO performance."><i class="fas fa-lightbulb text-warning"></i> Optimization Suggestions:</h6>
                             <ul class="mb-0">
                                 {% for suggestion in description_analysis.optimization_suggestions %}
                                 <li>{{ suggestion }}</li>
@@ -509,7 +735,7 @@
         <div class="col-md-6 mb-4">
             <div class="card h-100" id="conversionCard">
                 <div class="card-header bg-warning d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Conversion Analysis <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Rates calculated from BigQuery revenue data + YouTube Analytics views. Drivers and recommendations are AI-generated by Claude."></i></h5>
+                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Rates calculated from BigQuery revenue data + YouTube Analytics views. Drivers and recommendations are AI-generated by Claude.">Conversion Analysis</span></h5>
                     {% if conversion_analysis %}
                     <button class="btn btn-sm btn-outline-dark" onclick="openDetailModal('conversionCard', 'Conversion Analysis', 'bg-warning text-dark', 'fas fa-chart-line')">
                         <i class="fas fa-expand-alt"></i>
@@ -525,30 +751,30 @@
 
                     <div class="row mb-3">
                         <div class="col-6 text-center">
-                            <h6>Views → Sales <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="BigQuery: (total sales / total views) × 100"></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="BigQuery: (total sales / total views) × 100">Views → Sales</h6>
                             <h3 class="text-success">{{ "%.3f" | format(conv_rate) }}%</h3>
                             <small class="text-muted">Conversion Rate</small>
                         </div>
                         <div class="col-6 text-center">
-                            <h6>Clicks → Sales <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="BigQuery: (total sales / total affiliate clicks) × 100"></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="BigQuery: (total sales / total affiliate clicks) × 100">Clicks → Sales</h6>
                             <h3 class="text-info">{{ "%.1f" | format(click_to_sale) }}%</h3>
                             <small class="text-muted">Click-to-Sale Rate</small>
                         </div>
                     </div>
                     <div class="row mb-3">
                         <div class="col-6 text-center">
-                            <h6>Revenue/Click <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="BigQuery: total revenue / total affiliate clicks"></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="BigQuery: total revenue / total affiliate clicks">Revenue/Click</h6>
                             <h3 class="text-primary">{{ rev_per_click | format_currency }}</h3>
                         </div>
                         <div class="col-6 text-center">
-                            <h6>Revenue/1K Views <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="BigQuery: (total revenue / total views) × 1000"></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="BigQuery: (total revenue / total views) × 1000">Revenue/1K Views</h6>
                             <h3 class="text-warning">{{ (revenue_metrics.revenue_per_1k_views if revenue_metrics else 0) | format_currency }}</h3>
                         </div>
                     </div>
 
                     {% if conversion_analysis and conversion_analysis.conversion_drivers %}
                     <div class="mb-3">
-                        <h6><i class="fas fa-rocket text-success"></i> Conversion Drivers: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude. Factors in the video content that contribute to converting viewers into buyers."></i></h6>
+                        <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude. Factors in the video content that contribute to converting viewers into buyers."><i class="fas fa-rocket text-success"></i> Conversion Drivers:</h6>
                         <ul class="mb-0">
                             {% for driver in conversion_analysis.conversion_drivers %}
                             <li>{{ driver }}</li>
@@ -559,7 +785,7 @@
 
                     {% if conversion_analysis and conversion_analysis.underperformance_reasons %}
                     <div class="mb-3">
-                        <h6><i class="fas fa-exclamation-triangle text-danger"></i> Underperformance Reasons: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude using BigQuery revenue data + video content. Explains why conversions may be lower than expected."></i></h6>
+                        <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude using BigQuery revenue data + video content. Explains why conversions may be lower than expected."><i class="fas fa-exclamation-triangle text-danger"></i> Underperformance Reasons:</h6>
                         <ul class="mb-0">
                             {% for reason in conversion_analysis.underperformance_reasons %}
                             <li>{{ reason }}</li>
@@ -570,7 +796,7 @@
 
                     {% if conversion_analysis and conversion_analysis.recommendations %}
                     <div>
-                        <h6><i class="fas fa-star text-warning"></i> Recommendations: <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-generated by Claude. Actionable steps to improve conversion rates based on real performance data and content analysis."></i></h6>
+                        <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-generated by Claude. Actionable steps to improve conversion rates based on real performance data and content analysis."><i class="fas fa-star text-warning"></i> Recommendations:</h6>
                         <ul class="mb-0">
                             {% for rec in conversion_analysis.recommendations %}
                             <li>{{ rec }}</li>
@@ -594,7 +820,7 @@
         <div class="col-md-6 mb-4">
             <div class="card h-100" id="transcriptCard">
                 <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-file-audio"></i> Transcript <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Speech-to-text by Groq Whisper AI. Audio is downloaded, transcribed, then deleted. Segments contain word-level timestamps."></i></h5>
+                    <h5 class="mb-0"><i class="fas fa-file-audio"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Speech-to-text by Groq Whisper AI. Audio is downloaded, transcribed, then deleted. Segments contain word-level timestamps.">Transcript</span></h5>
                     <button class="btn btn-sm btn-outline-light" onclick="openDetailModal('transcriptCard', 'Transcript', 'bg-dark', 'fas fa-file-audio')">
                         <i class="fas fa-expand-alt"></i>
                     </button>
@@ -606,7 +832,7 @@
                         {% if transcript_data.duration_seconds %}
                         <span class="badge bg-warning">{{ (transcript_data.duration_seconds / 60)|int }} min</span>
                         {% endif %}
-                        <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Word count calculated from transcript text. Provider is the speech-to-text engine (Groq Whisper). Duration from audio file metadata."></i>
+                        <span class="small text-muted" style="cursor:help;" data-bs-toggle="tooltip" title="Word count calculated from transcript text. Provider is the speech-to-text engine (Groq Whisper). Duration from audio file metadata.">(hover for details)</span>
                     </div>
 
                     {% if transcript_data.segments %}
@@ -614,12 +840,12 @@
                     <ul class="nav nav-tabs nav-sm mb-3" id="transcriptTabs" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active py-1 px-2" id="fulltext-tab" data-bs-toggle="tab" data-bs-target="#transcript-fulltext" type="button" role="tab">
-                                <i class="fas fa-align-left me-1"></i> Full Text <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Complete transcript text generated by Groq Whisper AI from the video audio."></i>
+                                <i class="fas fa-align-left me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Complete transcript text generated by Groq Whisper AI from the video audio.">Full Text</span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
                             <button class="nav-link py-1 px-2" id="timestamps-tab" data-bs-toggle="tab" data-bs-target="#transcript-timestamps" type="button" role="tab">
-                                <i class="fas fa-clock me-1"></i> With Timestamps <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Transcript segments with start times from Groq Whisper. Each row is a speech segment with its timestamp in seconds."></i>
+                                <i class="fas fa-clock me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Transcript segments with start times from Groq Whisper. Each row is a speech segment with its timestamp in seconds.">With Timestamps</span>
                             </button>
                         </li>
                     </ul>
@@ -673,7 +899,7 @@
         <div class="col-md-6 mb-4">
             <div class="card h-100" id="emotionCard">
                 <div class="card-header text-white d-flex justify-content-between align-items-center" style="background-color: #6f42c1;">
-                    <h5 class="mb-0"><i class="fas fa-smile"></i> Voice Emotion Analysis <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Voice prosody analyzed by Hume AI. Scores represent confidence (0-100%) that each emotion is present in speech."></i></h5>
+                    <h5 class="mb-0"><i class="fas fa-smile"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Voice prosody analyzed by Hume AI. Scores represent confidence (0-100%) that each emotion is present in speech.">Voice Emotion Analysis</span></h5>
                     {% if transcript_data.emotions and transcript_data.emotions.summary %}
                     <button class="btn btn-sm btn-outline-light" onclick="openDetailModal('emotionCard', 'Voice Emotion Analysis', '', 'fas fa-smile')" style="border-color: rgba(255,255,255,.5); color: white;">
                         <i class="fas fa-expand-alt"></i>
@@ -685,19 +911,19 @@
                         <div class="mb-3">
                             <span class="badge bg-info">{{ transcript_data.emotions.total_segments }} segments analyzed</span>
                             <span class="badge bg-secondary">{{ transcript_data.emotions.summary|length }} emotions detected</span>
-                            <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Audio split into segments and analyzed by Hume AI voice prosody model. Each segment is scored for multiple emotions (0-100% confidence)."></i>
+                            <span class="small text-muted" style="cursor:help;" data-bs-toggle="tooltip" title="Audio split into segments and analyzed by Hume AI voice prosody model. Each segment is scored for multiple emotions (0-100% confidence).">(hover for details)</span>
                         </div>
 
                         <!-- Tabs for Summary vs Timeline -->
                         <ul class="nav nav-tabs nav-sm mb-3" id="emotionTabs" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link active py-1 px-2" id="summary-tab" data-bs-toggle="tab" data-bs-target="#emotion-summary" type="button" role="tab">
-                                    <i class="fas fa-chart-bar me-1"></i> Summary <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Average confidence score per emotion across all segments. Occurrences = how many segments detected that emotion. Source: Hume AI."></i>
+                                    <i class="fas fa-chart-bar me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Average confidence score per emotion across all segments. Occurrences = how many segments detected that emotion. Source: Hume AI.">Summary</span>
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link py-1 px-2" id="timeline-tab" data-bs-toggle="tab" data-bs-target="#emotion-timeline" type="button" role="tab">
-                                    <i class="fas fa-clock me-1"></i> Timeline <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Per-segment emotion breakdown over time. Shows the top 3 emotions detected in each audio segment with their confidence scores. Source: Hume AI."></i>
+                                    <i class="fas fa-clock me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Per-segment emotion breakdown over time. Shows the top 3 emotions detected in each audio segment with their confidence scores. Source: Hume AI.">Timeline</span>
                                 </button>
                             </li>
                         </ul>
@@ -771,7 +997,7 @@
         <div class="col-12 mb-4">
             <div class="card" id="frameCard">
                 <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-images"></i> Frame Analysis <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Video frames extracted at intervals and analyzed by Claude Vision AI for scene description, on-screen text, and object detection."></i></h5>
+                    <h5 class="mb-0"><i class="fas fa-images"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Video frames extracted at intervals and analyzed by Claude Vision AI for scene description, on-screen text, and object detection.">Frame Analysis</span></h5>
                     <div>
                         <span class="badge bg-light text-dark me-2">{{ transcript_data.frame_analysis|length }} frames</span>
                         <button class="btn btn-sm btn-outline-light" onclick="openDetailModal('frameCard', 'Frame Analysis', 'bg-secondary', 'fas fa-images')">
@@ -788,15 +1014,15 @@
                                     <strong>{{ frame.timestamp }}s</strong>
                                 </div>
                                 <div class="card-body py-2">
-                                    <p class="card-text small mb-2"><strong class="text-secondary">Scene:</strong> <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Scene description generated by Claude Vision AI analyzing the extracted video frame image."></i> {{ frame.scene if frame.scene else 'No description' }}</p>
+                                    <p class="card-text small mb-2"><strong class="text-secondary" style="cursor:help;" data-bs-toggle="tooltip" title="Scene description generated by Claude Vision AI analyzing the extracted video frame image.">Scene:</strong> {{ frame.scene if frame.scene else 'No description' }}</p>
                                     {% if frame.text_on_screen %}
                                     <div class="small">
-                                        <strong class="text-warning">Text:</strong> <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="On-screen text detected by Claude Vision AI (OCR) from the video frame."></i> {{ frame.text_on_screen }}
+                                        <strong class="text-warning" style="cursor:help;" data-bs-toggle="tooltip" title="On-screen text detected by Claude Vision AI (OCR) from the video frame.">Text:</strong> {{ frame.text_on_screen }}
                                     </div>
                                     {% endif %}
                                     {% if frame.objects %}
                                     <div class="small mt-1">
-                                        <strong class="text-info">Objects:</strong> <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Visual objects and elements identified by Claude Vision AI in the video frame."></i> {{ frame.objects }}
+                                        <strong class="text-info" style="cursor:help;" data-bs-toggle="tooltip" title="Visual objects and elements identified by Claude Vision AI in the video frame.">Objects:</strong> {{ frame.objects }}
                                     </div>
                                     {% endif %}
                                 </div>
@@ -818,7 +1044,7 @@
             <div class="card border-primary" id="insightsCard">
                 <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <div>
-                        <h5 class="mb-0"><i class="fas fa-lightbulb"></i> AI Content Insights <i class="fas fa-info-circle opacity-50 small info-tip" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Generated by Claude AI combining transcript text, voice emotion data, and visual frame analysis into comprehensive content insights."></i></h5>
+                        <h5 class="mb-0"><i class="fas fa-lightbulb"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Generated by Claude AI combining transcript text, voice emotion data, and visual frame analysis into comprehensive content insights.">AI Content Insights</span></h5>
                         <small class="opacity-75">Combined analysis of transcript, emotions, and visuals</small>
                     </div>
                     {% if transcript_data.content_insights %}
@@ -834,16 +1060,16 @@
                     {# Summary Row #}
                     <div class="row mb-3">
                         <div class="col-md-8">
-                            <h6><i class="fas fa-file-alt text-primary"></i> Content Summary <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-generated by Claude combining transcript, voice emotions (Hume AI), and frame analysis (Claude Vision) into a comprehensive summary."></i></h6>
+                            <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-generated by Claude combining transcript, voice emotions (Hume AI), and frame analysis (Claude Vision) into a comprehensive summary."><i class="fas fa-file-alt text-primary"></i> Content Summary</h6>
                             <p class="mb-2" style="line-height: 1.6;">{{ insights.content_summary or 'Not available' }}</p>
                             <div class="alert alert-light border-start border-primary border-3 py-2 mb-0">
-                                <strong><i class="fas fa-bullseye"></i> Key Takeaway:</strong> <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="The single most important message from the video, as identified by Claude AI from transcript analysis."></i> {{ insights.key_takeaway or 'Not available' }}
+                                <strong style="cursor:help;" data-bs-toggle="tooltip" title="The single most important message from the video, as identified by Claude AI from transcript analysis."><i class="fas fa-bullseye"></i> Key Takeaway:</strong> {{ insights.key_takeaway or 'Not available' }}
                             </div>
                         </div>
                         <div class="col-md-4 text-center">
                             <div class="card bg-light">
                                 <div class="card-body py-3">
-                                    <h6 class="text-muted mb-1">Engagement Score <i class="fas fa-info-circle small info-tip" data-bs-toggle="tooltip" title="AI score (1-10) by Claude based on content quality, emotional delivery, visual variety, and audience relevance."></i></h6>
+                                    <h6 class="text-muted mb-1" style="cursor:help;" data-bs-toggle="tooltip" title="AI score (1-10) by Claude based on content quality, emotional delivery, visual variety, and audience relevance.">Engagement Score</h6>
                                     <h2 class="mb-1 {% if insights.engagement_score >= 7 %}text-success{% elif insights.engagement_score >= 5 %}text-warning{% else %}text-danger{% endif %}">
                                         {{ insights.engagement_score or 0 }}/10
                                     </h2>
@@ -860,7 +1086,7 @@
                         <div class="col-md-6">
                             <div class="card border-0 bg-light h-100">
                                 <div class="card-body">
-                                    <h6><i class="fas fa-heart text-danger"></i> Emotional Arc <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI analysis by Claude using Hume AI emotion data. Describes how emotional tone shifts throughout the video."></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI analysis by Claude using Hume AI emotion data. Describes how emotional tone shifts throughout the video."><i class="fas fa-heart text-danger"></i> Emotional Arc</h6>
                                     <p class="mb-0" style="line-height: 1.6;">{{ insights.emotional_arc or 'Not analyzed' }}</p>
                                 </div>
                             </div>
@@ -868,7 +1094,7 @@
                         <div class="col-md-6">
                             <div class="card border-0 bg-light h-100">
                                 <div class="card-body">
-                                    <h6><i class="fas fa-film text-info"></i> Visual Storytelling <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI analysis by Claude using frame analysis data (Claude Vision). Describes how visuals support the narrative."></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI analysis by Claude using frame analysis data (Claude Vision). Describes how visuals support the narrative."><i class="fas fa-film text-info"></i> Visual Storytelling</h6>
                                     <p class="mb-0" style="line-height: 1.6;">{{ insights.visual_storytelling or 'Not analyzed' }}</p>
                                 </div>
                             </div>
@@ -880,7 +1106,7 @@
                     {# Key Moments #}
                     {% if insights.key_moments %}
                     <div class="mb-3">
-                        <h6><i class="fas fa-star text-warning"></i> Key Moments <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude. Important moments in the video with timestamps, combining transcript content, emotional peaks, and visual changes."></i></h6>
+                        <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude. Important moments in the video with timestamps, combining transcript content, emotional peaks, and visual changes."><i class="fas fa-star text-warning"></i> Key Moments</h6>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered mb-0">
                                 <thead class="table-light">
@@ -912,7 +1138,7 @@
                             {% if insights.content_strengths %}
                             <div class="card border-success border-top border-0 h-100">
                                 <div class="card-body pt-2">
-                                    <h6><i class="fas fa-check-circle text-success"></i> Strengths <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude from multimodal analysis (transcript + emotions + visuals). What the content does well."></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude from multimodal analysis (transcript + emotions + visuals). What the content does well."><i class="fas fa-check-circle text-success"></i> Strengths</h6>
                                     <ul class="mb-0">
                                         {% for strength in insights.content_strengths %}
                                         <li>{{ strength }}</li>
@@ -926,7 +1152,7 @@
                             {% if insights.audience_engagement_factors %}
                             <div class="card border-primary border-top border-0 h-100">
                                 <div class="card-body pt-2">
-                                    <h6><i class="fas fa-users text-primary"></i> Engagement Factors <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-identified by Claude. Elements that drive audience engagement based on content analysis and emotional delivery patterns."></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-identified by Claude. Elements that drive audience engagement based on content analysis and emotional delivery patterns."><i class="fas fa-users text-primary"></i> Engagement Factors</h6>
                                     <ul class="mb-0">
                                         {% for factor in insights.audience_engagement_factors %}
                                         <li>{{ factor }}</li>
@@ -940,7 +1166,7 @@
                             {% if insights.improvement_opportunities %}
                             <div class="card border-warning border-top border-0 h-100">
                                 <div class="card-body pt-2">
-                                    <h6><i class="fas fa-arrow-up text-warning"></i> Improvement Opportunities <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="AI-suggested by Claude. Areas where the content could be improved based on gaps identified in multimodal analysis."></i></h6>
+                                    <h6 style="cursor:help;" data-bs-toggle="tooltip" title="AI-suggested by Claude. Areas where the content could be improved based on gaps identified in multimodal analysis."><i class="fas fa-arrow-up text-warning"></i> Improvement Opportunities</h6>
                                     <ul class="mb-0">
                                         {% for opp in insights.improvement_opportunities %}
                                         <li>{{ opp }}</li>
@@ -996,8 +1222,7 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="real-performance-tab" data-bs-toggle="tab"
                                 data-bs-target="#real-performance" type="button" role="tab">
-                            <i class="fas fa-chart-bar me-1"></i> BigQuery Data
-                            <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)"></i>
+                            <i class="fas fa-chart-bar me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="Actual revenue data from BigQuery affiliate tracking (not AI-generated)">BigQuery Data</span>
                             {% if affiliate_performance %}
                             <span class="badge bg-success ms-1">{{ affiliate_performance|length }}</span>
                             {% endif %}
@@ -1006,8 +1231,7 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="existing-links-tab" data-bs-toggle="tab"
                                 data-bs-target="#existing-links" type="button" role="tab">
-                            <i class="fas fa-link me-1"></i> Existing Links
-                            <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="URLs extracted from description using pattern matching. Affiliate detection based on URL shorteners, tracking params, and known networks."></i>
+                            <i class="fas fa-link me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="URLs extracted from description using pattern matching. Affiliate detection based on URL shorteners, tracking params, and known networks.">Existing Links</span>
                             {% if existing_links %}
                             <span class="badge bg-info ms-1">{{ existing_links.total_links }}</span>
                             {% endif %}
@@ -1016,8 +1240,7 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="ai-suggestions-tab" data-bs-toggle="tab"
                                 data-bs-target="#ai-suggestions" type="button" role="tab">
-                            <i class="fas fa-robot me-1"></i> AI Suggestions
-                            <i class="fas fa-info-circle opacity-50 info-tip" data-bs-toggle="tooltip" data-bs-trigger="hover" title="AI-generated product recommendations by Claude based on video content, audience, and real performance data when available."></i>
+                            <i class="fas fa-robot me-1"></i> <span style="cursor:help;" data-bs-toggle="tooltip" data-bs-trigger="hover" title="AI-generated product recommendations by Claude based on video content, audience, and real performance data when available.">AI Suggestions</span>
                             {% if affiliate_recs %}
                             <span class="badge bg-warning text-dark ms-1">{{ affiliate_recs|length }}</span>
                             {% endif %}
@@ -1037,25 +1260,25 @@
                             <div class="row mb-3">
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Total Revenue <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Sum of all affiliate revenue for this video. Source: BigQuery Revenue_Metrics table."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Sum of all affiliate revenue for this video. Source: BigQuery Revenue_Metrics table.">Total Revenue</small>
                                         <strong class="text-success fs-5">${{ "%.2f" | format(total_rev) }}</strong>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Total Clicks <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Sum of all affiliate link clicks tracked for this video. Source: BigQuery Revenue_Metrics table."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Sum of all affiliate link clicks tracked for this video. Source: BigQuery Revenue_Metrics table.">Total Clicks</small>
                                         <strong class="fs-5">{{ total_clicks }}</strong>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Total Sales <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Sum of all completed sales attributed to this video's affiliate links. Source: BigQuery Revenue_Metrics table."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Sum of all completed sales attributed to this video's affiliate links. Source: BigQuery Revenue_Metrics table.">Total Sales</small>
                                         <strong class="fs-5">{{ total_sales }}</strong>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Tracking IDs <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Number of unique affiliate tracking IDs found for this video in BigQuery."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Number of unique affiliate tracking IDs found for this video in BigQuery.">Tracking IDs</small>
                                         <strong class="fs-5">{{ affiliate_performance|length }}</strong>
                                     </div>
                                 </div>
@@ -1065,15 +1288,15 @@
                                 <table class="table table-sm table-hover">
                                     <thead class="table-light">
                                         <tr>
-                                            <th>Tracking ID <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Unique affiliate tracking ID from BigQuery used to attribute clicks/sales to this video."></i></th>
+                                            <th style="cursor:help;" data-bs-toggle="tooltip" title="Unique affiliate tracking ID from BigQuery used to attribute clicks/sales to this video.">Tracking ID</th>
                                             <th>Affiliate</th>
-                                            <th>Platform <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Affiliate network or platform detected from URL patterns and known affiliate names."></i></th>
-                                            <th>Placement <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Where the affiliate link was placed (e.g., description, pinned comment)."></i></th>
+                                            <th style="cursor:help;" data-bs-toggle="tooltip" title="Affiliate network or platform detected from URL patterns and known affiliate names.">Platform</th>
+                                            <th style="cursor:help;" data-bs-toggle="tooltip" title="Where the affiliate link was placed (e.g., description, pinned comment).">Placement</th>
                                             <th class="text-end">Revenue</th>
                                             <th class="text-end">Clicks</th>
                                             <th class="text-end">Sales</th>
-                                            <th class="text-end">Conv% <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Conversion rate = (sales / clicks) × 100. From BigQuery."></i></th>
-                                            <th class="text-end">Rev/Click <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Revenue per click = total revenue / total clicks. From BigQuery."></i></th>
+                                            <th class="text-end" style="cursor:help;" data-bs-toggle="tooltip" title="Conversion rate = (sales / clicks) × 100. From BigQuery.">Conv%</th>
+                                            <th class="text-end" style="cursor:help;" data-bs-toggle="tooltip" title="Revenue per click = total revenue / total clicks. From BigQuery.">Rev/Click</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1109,25 +1332,25 @@
                             <div class="row mb-3">
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Total Links <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="All URLs found in the video description using regex pattern matching."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="All URLs found in the video description using regex pattern matching.">Total Links</small>
                                         <strong class="fs-5">{{ existing_links.total_links }}</strong>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Affiliate Links <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Links detected as affiliate using URL shortener patterns, tracking params, known affiliate networks, and BigQuery affiliate names."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Links detected as affiliate using URL shortener patterns, tracking params, known affiliate networks, and BigQuery affiliate names.">Affiliate Links</small>
                                         <strong class="text-success fs-5">{{ existing_links.affiliate_links }}</strong>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Non-Affiliate <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Links not matching any known affiliate patterns (social links, YouTube links, etc.)."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Links not matching any known affiliate patterns (social links, YouTube links, etc.).">Non-Affiliate</small>
                                         <strong class="fs-5">{{ existing_links.non_affiliate_links }}</strong>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
                                     <div class="border rounded p-2 text-center">
-                                        <small class="text-muted d-block">Disclosure <i class="fas fa-info-circle info-tip" data-bs-toggle="tooltip" title="Checks if description contains affiliate disclosure keywords (affiliate, commission, sponsored, etc.)."></i></small>
+                                        <small class="text-muted d-block" style="cursor:help;" data-bs-toggle="tooltip" title="Checks if description contains affiliate disclosure keywords (affiliate, commission, sponsored, etc.).">Disclosure</small>
                                         {% if existing_links.has_affiliate_disclosure %}
                                             <strong class="text-success fs-5"><i class="fas fa-check-circle"></i> Yes</strong>
                                         {% else %}
@@ -1144,8 +1367,8 @@
                                         <tr>
                                             <th>#</th>
                                             <th>URL</th>
-                                            <th>Platform <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Detected from URL domain, known affiliate names from BigQuery, or extracted from URL shortener paths."></i></th>
-                                            <th>Affiliate? <i class="fas fa-info-circle text-muted small info-tip" data-bs-toggle="tooltip" title="Detected using: URL shorteners (bit.ly, etc.), tracking params (?tag=, /ref=), affiliate networks (ShareASale, Impact, etc.), deal subdomains, and known affiliate names."></i></th>
+                                            <th style="cursor:help;" data-bs-toggle="tooltip" title="Detected from URL domain, known affiliate names from BigQuery, or extracted from URL shortener paths.">Platform</th>
+                                            <th style="cursor:help;" data-bs-toggle="tooltip" title="Detected using: URL shorteners (bit.ly, etc.), tracking params (?tag=, /ref=), affiliate networks (ShareASale, Impact, etc.), deal subdomains, and known affiliate names.">Affiliate?</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1238,10 +1461,6 @@
 
 <!-- Generic Detail Modal (used by all section expand buttons) -->
 <style>
-    /* Info tooltip icons: hidden in card view, visible in modals */
-    .info-tip { display: none !important; }
-    #detailModalBody .info-tip,
-    #affiliateModal .info-tip { display: inline !important; }
     /* Expanded layout inside detail modal */
     #detailModalBody .col-md-4 { flex: 0 0 50%; max-width: 50%; }
     #detailModalBody .col-md-6 { flex: 0 0 50%; max-width: 50%; }
@@ -1326,6 +1545,7 @@
                     <span id="analysisStep-description" class="me-2"><i class="fas fa-circle"></i> Description</span>
                     <span id="analysisStep-affiliate" class="me-2"><i class="fas fa-circle"></i> Affiliates</span>
                     <span id="analysisStep-conversion" class="me-2"><i class="fas fa-circle"></i> Conversion</span>
+                    <span id="analysisStep-script_score" class="me-2"><i class="fas fa-circle"></i> Score</span>
                 </div>
             </div>
             <div class="col-auto">
@@ -1356,6 +1576,7 @@
                     {% if description_analysis %}<span class="badge bg-info ms-1">Description</span>{% endif %}
                     {% if affiliate_recs %}<span class="badge bg-warning text-dark ms-1">Affiliate</span>{% endif %}
                     {% if conversion_analysis %}<span class="badge bg-primary ms-1">Conversion</span>{% endif %}
+                    {% if script_score %}<span class="badge bg-dark ms-1">Script Score</span>{% endif %}
                 </div>
                 {% endif %}
 
@@ -1411,6 +1632,19 @@
                         </label>
                     </div>
                     <small class="text-muted ms-4">Conversion drivers, underperformance reasons & optimization recommendations</small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input analysis-checkbox" type="checkbox" id="enableScriptScore" {% if not script_score %}checked{% endif %}>
+                        <label class="form-check-label" for="enableScriptScore">
+                            <i class="fas fa-clipboard-check text-dark me-1"></i> Script Score (Gates + Quality)
+                            {% if script_score %}
+                            <span class="badge bg-secondary ms-1">exists</span>
+                            {% endif %}
+                        </label>
+                    </div>
+                    <small class="text-muted ms-4">6 gate checks, 6-dimension quality score (100pts), context multiplier, top 3 action items</small>
                 </div>
 
                 <div class="text-center mt-3">
@@ -2200,6 +2434,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (document.getElementById('enableDescription').checked) analysisTypes.push('description');
         if (document.getElementById('enableAffiliate').checked) analysisTypes.push('affiliate');
         if (document.getElementById('enableConversion').checked) analysisTypes.push('conversion');
+        if (document.getElementById('enableScriptScore').checked) analysisTypes.push('script_score');
 
         // Validate at least one selected
         if (analysisTypes.length === 0) {
@@ -2227,7 +2462,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateNavBadge();
 
         // Reset step icons - show only selected types
-        ['script', 'description', 'affiliate', 'conversion'].forEach(s => {
+        ['script', 'description', 'affiliate', 'conversion', 'script_score'].forEach(s => {
             const stepEl = document.getElementById('analysisStep-' + s);
             if (stepEl) {
                 if (analysisTypes.includes(s)) {
@@ -2302,11 +2537,11 @@ document.addEventListener('DOMContentLoaded', function() {
         analysisPercent.textContent = progress + '%';
         analysisStatusText.textContent = message;
 
-        const steps = ['script', 'description', 'affiliate', 'conversion'];
+        const steps = ['script', 'description', 'affiliate', 'conversion', 'script_score'];
         const stepMap = {
             'starting': -1, 'fetching': -1,
-            'script': 0, 'description': 1, 'affiliate': 2, 'conversion': 3,
-            'saving': 4, 'completed': 5
+            'script': 0, 'description': 1, 'affiliate': 2, 'conversion': 3, 'script_score': 4,
+            'saving': 5, 'completed': 6
         };
 
         const currentIdx = stepMap[step] !== undefined ? stepMap[step] : -1;

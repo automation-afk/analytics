@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}Script Scores Library - YouTube Analytics{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h1 class="mb-0">
+                <i class="fas fa-clipboard-check"></i> Script Scores Library
+                {% if total is defined and total %}<span class="badge bg-secondary ms-2">{{ total }} videos</span>{% endif %}
+            </h1>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('dashboard.script_scores_trends') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-chart-area me-1"></i> View Trends
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body py-2">
+                    <form method="get" action="{{ url_for('dashboard.script_scores_library') }}" class="row g-2 align-items-end">
+                        <div class="col-12 col-sm-6 col-lg-2">
+                            <label for="channel" class="form-label mb-1 small">Channel</label>
+                            <select class="form-select form-select-sm" id="channel" name="channel">
+                                <option value="">All Channels</option>
+                                {% for ch in all_channels %}
+                                <option value="{{ ch }}" {% if channel_filter == ch %}selected{% endif %}>{{ ch }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-2">
+                            <label for="silo" class="form-label mb-1 small">Silo</label>
+                            <select class="form-select form-select-sm" id="silo" name="silo">
+                                <option value="">All Silos</option>
+                                {% for s in all_silos %}
+                                <option value="{{ s }}" {% if silo_filter == s %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-2">
+                            <label for="keyword" class="form-label mb-1 small">Keyword / Title</label>
+                            <input type="text" class="form-control form-control-sm" id="keyword" name="keyword"
+                                   value="{{ keyword_search or '' }}" placeholder="Search keywords or title...">
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-2">
+                            <label for="gates" class="form-label mb-1 small">Gate Status</label>
+                            <select class="form-select form-select-sm" id="gates" name="gates">
+                                <option value="">All</option>
+                                <option value="pass" {% if gates_filter == 'pass' %}selected{% endif %}>Pass</option>
+                                <option value="fail" {% if gates_filter == 'fail' %}selected{% endif %}>Fail</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-4 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                                <i class="fas fa-filter"></i> Filter
+                            </button>
+                            <a href="{{ url_for('dashboard.script_scores_library') }}" class="btn btn-secondary btn-sm flex-grow-1">
+                                <i class="fas fa-times"></i> Clear
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scores Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body p-0">
+                    {% if scores %}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm table-bordered mb-0">
+                            <thead>
+                                <tr class="table-dark">
+                                    <th colspan="4" class="text-center border-end" style="border-color:#6c757d !important;">
+                                        <i class="fas fa-video me-1"></i> Video Info
+                                    </th>
+                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
+                                        <i class="fas fa-star me-1"></i> Scoring
+                                    </th>
+                                    <th colspan="3" class="text-center border-end" style="border-color:#6c757d !important;">
+                                        <i class="fas fa-dollar-sign me-1"></i> Revenue & Opportunity
+                                    </th>
+                                    <th colspan="2" class="text-center">
+                                        <i class="fas fa-tasks me-1"></i> Details
+                                    </th>
+                                </tr>
+                                <tr class="table-secondary">
+                                    {% macro sort_link(col, label) %}
+                                    <a href="{{ url_for('dashboard.script_scores_library', page=page, channel=channel_filter, silo=silo_filter, keyword=keyword_search, gates=gates_filter, sort_by=col, sort_dir='asc' if sort_by == col and sort_dir == 'desc' else 'desc' if sort_by == col and sort_dir == 'asc' else 'desc') }}" class="text-dark text-decoration-none">
+                                        {{ label }} {% if sort_by == col %}<i class="fas fa-sort-{{ 'up' if sort_dir == 'asc' else 'down' }} text-primary"></i>{% else %}<i class="fas fa-sort" style="opacity:0.3;"></i>{% endif %}
+                                    </a>
+                                    {% endmacro %}
+                                    <th style="min-width:250px;">{{ sort_link('title', 'Video') }}</th>
+                                    <th style="min-width:100px;">{{ sort_link('main_keyword', 'Keyword') }}</th>
+                                    <th style="min-width:80px;">{{ sort_link('silo', 'Silo') }}</th>
+                                    <th class="text-center border-end" style="min-width:70px; border-color:#adb5bd !important;"
+                                        title="Gate check status: pass (all gates passed) or fail (one or more failed)">{{ sort_link('all_gates_passed', 'Gates') }}</th>
+                                    <th class="text-center" style="min-width:80px;"
+                                        title="Quality Score (0-100): 6 dimensions — Specificity (25), Conversion Architecture (20), Retention Architecture (20), Authenticity (15), Viewer Respect (10), Production (10). Scored by Claude AI from transcript.">{{ sort_link('quality_score_total', 'Quality') }}</th>
+                                    <th class="text-center" style="min-width:80px;"
+                                        title="Weighted Score = Quality Score x Context Multiplier. Context is based on keyword tier + domination score.">{{ sort_link('multiplied_score', 'Weighted') }}</th>
+                                    <th class="text-center border-end" style="min-width:70px; border-color:#adb5bd !important;"
+                                        title="Rizz Score (0-100): Presenter charisma. 60% Vocal (Hume AI emotions) + 40% Copy (transcript text analysis). 80-100=Magnetic, 60-79=Solid, 40-59=Flat, <40=Monotone.">{{ sort_link('rizz_score', 'Rizz') }}</th>
+                                    <th class="text-end" style="min-width:90px;"
+                                        title="90-day average monthly revenue from Metrics_by_Month. = AVG(revenue) WHERE date >= 90 days ago.">{{ sort_link('avg_monthly_revenue', 'Rev (90d)') }}</th>
+                                    <th class="text-end" style="min-width:90px;"
+                                        title="Revenue Potential = highest 90d avg monthly revenue earned by ANY video targeting the same main_keyword. Source: Metrics_by_Month + Digibot_General_info keyword grouping.">{{ sort_link('revenue_potential', 'Rev Potential') }}</th>
+                                    <th class="text-end border-end fw-bold" style="min-width:100px; border-color:#adb5bd !important;"
+                                        title="Optimization Opportunity = (Revenue Potential - Current Revenue) x (100 - Quality Score) / 100. Higher = more room for improvement. Prioritize these videos.">{{ sort_link('optimization_opportunity', 'Opt. Opp.') }}</th>
+                                    <th style="min-width:200px;" title="Top priority action item from script scoring (highest-impact fix suggested by Claude AI)">Top Fix</th>
+                                    <th style="min-width:80px;" title="Date when this video was last scored">Scored</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in scores %}
+                                <tr style="cursor:pointer;" onclick="window.location='/videos/{{ row.video_id }}'">
+                                    <td>
+                                        <span class="fw-semibold" style="font-size:0.85rem;">
+                                            {{ (row.title or row.video_id)[:55] }}{% if (row.title or '')|length > 55 %}...{% endif %}
+                                        </span>
+                                        <br><small class="text-muted">{{ row.channel or '' }}</small>
+                                    </td>
+                                    <td><small>{{ row.main_keyword or '-' }}</small></td>
+                                    <td><small>{{ row.silo or '-' }}</small></td>
+                                    <td class="text-center border-end" style="border-color:#dee2e6 !important;">
+                                        {% if row.all_gates_passed %}
+                                        <span class="badge bg-success" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>All Gates Passed</b><br>{{ row.gates_passed|default(0) }}/{{ row.gates_total|default(0) }} gates OK">PASS</span>
+                                        {% else %}
+                                        <span class="badge bg-danger" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Gate Check Failed</b><br>{{ row.gates_passed|default(0) }}/{{ row.gates_total|default(0) }} gates OK{% if row.gates %}<br>{% for g in row.gates if not g.passed %}❌ {{ g.gate_name }}: {{ g.failure_reason[:60] }}<br>{% endfor %}{% endif %}">FAIL</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if row.quality_score_total is not none %}
+                                        <span class="badge {% if row.quality_score_total >= 80 %}bg-success{% elif row.quality_score_total >= 60 %}bg-warning text-dark{% else %}bg-danger{% endif %}" style="cursor:help; font-size:0.8rem;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Quality Score: {{ '%.0f'|format(row.quality_score_total) }}/100</b><br>Specificity: {{ '%.0f'|format(row.specificity_score or 0) }}/25<br>Conversion: {{ '%.0f'|format(row.conversion_arch_score or 0) }}/20<br>Retention: {{ '%.0f'|format(row.retention_arch_score or 0) }}/20<br>Authenticity: {{ '%.0f'|format(row.authenticity_score or 0) }}/15<br>Viewer Respect: {{ '%.0f'|format(row.viewer_respect_score or 0) }}/10<br>Production: {{ '%.0f'|format(row.production_score or 0) }}/10">
+                                            {{ "%.0f"|format(row.quality_score_total) }}
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if row.multiplied_score is not none %}
+                                        <span style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Weighted Score</b><br>= {{ '%.0f'|format(row.quality_score_total or 0) }} &times; {{ row.context_multiplier or 1 }}x<br>= <b>{{ '%.0f'|format(row.multiplied_score) }}</b><br>Tier: {{ (row.keyword_tier or 'N/A')|upper }}{% if row.domination_score is not none %}<br>Domination: {{ '%.0f'|format(row.domination_score) }}%{% endif %}">
+                                            <span class="fw-bold {% if row.multiplied_score >= 80 %}text-success{% elif row.multiplied_score >= 60 %}text-warning{% else %}text-danger{% endif %}">
+                                                {{ "%.0f"|format(row.multiplied_score) }}
+                                            </span>
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td class="text-center border-end" style="border-color:#dee2e6 !important;">
+                                        {% if row.rizz_score is not none %}
+                                        <span class="badge {% if row.rizz_score >= 80 %}bg-success{% elif row.rizz_score >= 60 %}bg-warning text-dark{% elif row.rizz_score >= 40 %}bg-secondary{% else %}bg-danger{% endif %}" style="cursor:help; font-size:0.8rem;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Rizz: {{ '%.0f'|format(row.rizz_score) }}/100</b><br>Vocal: {{ '%.0f'|format(row.rizz_vocal_score or 0) }}/60<br>Copy: {{ '%.0f'|format(row.rizz_copy_score or 0) }}/40<br>{% if row.rizz_score >= 80 %}Magnetic{% elif row.rizz_score >= 60 %}Solid{% elif row.rizz_score >= 40 %}Flat{% else %}Monotone{% endif %}">
+                                            {{ "%.0f"|format(row.rizz_score) }}
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if row.avg_monthly_revenue > 0 %}
+                                        <span class="{% if row.avg_monthly_revenue >= 1000 %}text-success fw-bold{% elif row.avg_monthly_revenue >= 100 %}text-body{% else %}text-muted{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>90d Avg Monthly Revenue</b><br>= AVG(revenue) from Metrics_by_Month<br>WHERE date &ge; 90 days ago<br>= <b>${{ '%.2f'|format(row.avg_monthly_revenue) }}/mo</b>">
+                                            ${{ "%.2f"|format(row.avg_monthly_revenue) }}
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if row.revenue_potential > 0 %}
+                                        <span style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Revenue Potential</b><br>= highest 90d avg monthly revenue by any video targeting keyword '{{ row.main_keyword|default('-')|e }}'<br>{% if row.best_video_id %}Best video: {{ row.best_video_id }}<br>{% endif %}= <b>${{ '%.2f'|format(row.revenue_potential) }}/mo</b>">
+                                            ${{ "%.2f"|format(row.revenue_potential) }}
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td class="text-end border-end fw-bold" style="border-color:#dee2e6 !important;">
+                                        {% if row.optimization_opportunity > 0 %}
+                                        <span class="{% if row.optimization_opportunity >= 100 %}text-danger fw-bold{% elif row.optimization_opportunity >= 50 %}text-warning{% else %}text-body{% endif %}" style="cursor:help;"
+                                            data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true"
+                                            title="<b>Optimization Opportunity</b><br>= (Rev Potential - Current Rev) &times; (100 - Quality) / 100<br>= (${{ '%.2f'|format(row.revenue_potential) }} - ${{ '%.2f'|format(row.avg_monthly_revenue) }}) &times; (100 - {{ '%.0f'|format(row.quality_score_total or 0) }}) / 100<br>= <b>${{ '%.2f'|format(row.optimization_opportunity) }}</b>">
+                                            ${{ "%.2f"|format(row.optimization_opportunity) }}
+                                        </span>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if row.top_fix %}
+                                        <small style="font-size:0.75rem;" title="{{ row.top_fix }}">{{ row.top_fix[:60] }}{% if row.top_fix|length > 60 %}...{% endif %}</small>
+                                        {% else %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ row.scored_at[:10] if row.scored_at else '-' }}</small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="p-3">
+                        <nav aria-label="Script scores pagination">
+                            <ul class="pagination justify-content-center mb-0">
+                                {% if page > 1 %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('dashboard.script_scores_library', page=page-1, channel=channel_filter, silo=silo_filter, keyword=keyword_search, gates=gates_filter, sort_by=sort_by, sort_dir=sort_dir) }}">
+                                        Previous
+                                    </a>
+                                </li>
+                                {% endif %}
+                                <li class="page-item active">
+                                    <span class="page-link">Page {{ page }}</span>
+                                </li>
+                                {% if has_more %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('dashboard.script_scores_library', page=page+1, channel=channel_filter, silo=silo_filter, keyword=keyword_search, gates=gates_filter, sort_by=sort_by, sort_dir=sort_dir) }}">
+                                        Next
+                                    </a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info text-center m-3">
+                        <i class="fas fa-info-circle"></i> No scored videos found. Score videos from their detail page using the Script Score checkbox in the Re-Analyze modal.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Initialize Bootstrap tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(function(el) {
+        new bootstrap.Tooltip(el, { html: true });
+    });
+});
+</script>
+{% endblock %}

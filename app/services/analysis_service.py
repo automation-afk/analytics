@@ -9,6 +9,7 @@ from app.services.content_analyzer import ContentAnalyzer
 from app.services.description_analyzer import DescriptionAnalyzer
 from app.services.affiliate_recommender import AffiliateRecommender
 from app.services.conversion_analyzer import ConversionAnalyzer
+from app.services.script_scoring_service import ScriptScoringService
 
 from app.models import (
     ScriptAnalysis, AffiliateRecommendation, DescriptionAnalysis,
@@ -37,6 +38,11 @@ class AnalysisService:
         self.description_analyzer = DescriptionAnalyzer(anthropic_api_key)
         self.affiliate_recommender = AffiliateRecommender(anthropic_api_key)
         self.conversion_analyzer = ConversionAnalyzer(anthropic_api_key)
+        self.script_scoring_service = ScriptScoringService(
+            api_key=anthropic_api_key,
+            local_db=bigquery_service.local_db,
+            bigquery_service=bigquery_service
+        )
 
         logger.info("AnalysisService initialized with all analyzers")
 
@@ -375,6 +381,41 @@ class AnalysisService:
             except Exception as e:
                 logger.error(f"Error in conversion analysis: {str(e)}")
 
+        # 5. Script Score (Gates + Quality + Context Multiplier)
+        script_score = None
+        if 'script_score' in analysis_types and transcript:
+            update_progress('script_score', 85, 'Running script scoring (gates + quality)...')
+            try:
+                logger.info(f"Running script scoring for {video_id}")
+
+                # Get duration from local transcript if available
+                duration = 0
+                if local_transcript:
+                    duration = local_transcript.get('duration_seconds', 0) or 0
+
+                script_score = self.script_scoring_service.score_video(
+                    video_id=video_id,
+                    transcript=transcript,
+                    title=video.title,
+                    description=video.description or "",
+                    duration_seconds=duration,
+                    progress_callback=lambda msg: update_progress('script_score', 90, msg)
+                )
+
+                # Store to local database
+                if self.bigquery.local_db:
+                    self.bigquery.local_db.store_script_score(script_score)
+                    logger.info(f"Script score stored for {video_id}: "
+                               f"quality={script_score.quality_score_total}, "
+                               f"gates={'PASS' if script_score.all_gates_passed else 'FAIL'}")
+
+                update_progress('script_score', 95, 'Script scoring complete')
+
+            except Exception as e:
+                logger.error(f"Error in script scoring: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+
         update_progress('saving', 98, 'Finalizing results...')
         # Return combined results
         return AnalysisResults(
@@ -383,7 +424,8 @@ class AnalysisService:
             script_analysis=script_analysis,
             affiliate_recommendations=affiliate_recommendations,
             description_analysis=description_analysis,
-            conversion_analysis=conversion_analysis
+            conversion_analysis=conversion_analysis,
+            script_score=script_score
         )
 
 
